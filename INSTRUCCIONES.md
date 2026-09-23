@@ -1,14 +1,22 @@
-# ALEX ORIENTA v1
+# ALEX ORIENTA v2
 
-Ya viene conectado al Database ID de la D1 `alex-orienta`.
+## Qué mejora respecto a v1
 
-## Después de subir a GitHub
-En Cloudflare > Worker `alex-orienta` > Settings > Variables and Secrets agrega como Secrets:
-- `ADMIN_PASSWORD`
-- `SESSION_SECRET`
+### Diseño
+- Página pública mucho más amplia, profesional y visual.
+- Hero más grande.
+- Nuevas secciones: confianza, proceso, beneficios y CTA más sólido.
+- Mejor estilo general del panel admin.
 
-No compartas esos valores por chat ni los pongas en GitHub.
+### IA
+- Mejor manejo del resultado de Workers AI.
+- Mensaje de respaldo más claro si la respuesta del modelo falla.
+- Prompts de ejemplo para probar Reflexión AI.
+- Instrucciones del sistema más enfocadas en comparación, claridad y reflexión.
 
-La IA usa el binding `AI` de Workers AI.
+## Subida
+Puedes reemplazar el contenido del repo anterior con esta versión y volver a desplegar.
 
-La V1 incluye página pública, solicitudes de citas, panel de Alex, personas, notas privadas, mapa vocacional y prueba interna de Reflexión AI.
+## Recordatorio
+Las notas privadas de Alex no se comparten con la IA.
+Solo se usa el contexto aprobado en el Mapa Vocacional.

@@ -1,1 +1,309 @@
-const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];let current="";const esc=v=>String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));async function api(p,o={}){const r=await fetch(p,{...o,headers:{"content-type":"application/json",...(o.headers||{})}}),j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.error||"Error");return j}async function show(){ $("#login").hidden=true;$("#app").hidden=false;await Promise.all([dash(),appointments(),people()])}$("#loginBtn").onclick=async()=>{try{await api("/api/admin/login",{method:"POST",body:JSON.stringify({password:$("#password").value})});show()}catch(e){$("#loginStatus").textContent=e.message}};$("#logout").onclick=async()=>{await api("/api/admin/logout",{method:"POST"});location.reload()};$$('[data-tab]').forEach(b=>b.onclick=()=>{$$('[data-tab]').forEach(x=>x.classList.toggle('active',x===b));$$('.view').forEach(v=>v.classList.remove('active'));$(`#view-${b.dataset.tab}`).classList.add('active')});async function dash(){try{const d=await api('/api/admin/dashboard');$("#s1").textContent=d.requested;$("#s2").textContent=d.confirmed;$("#s3").textContent=d.active_people;$("#s4").textContent=d.risk_messages}catch{}}async function appointments(){try{const d=await api('/api/admin/appointments');$("#appointments").innerHTML=d.appointments.map(a=>`<div class="row"><b>${esc(a.client_name)}</b><span>${esc(a.preferred_date)} ${esc(a.preferred_time)}</span><span>${esc(a.status)}</span><div><button onclick="statusA('${a.id}','confirmed')">Confirmar</button><button onclick="statusA('${a.id}','completed')">Realizada</button><button onclick="statusA('${a.id}','cancelled')">Cancelar</button></div></div>`).join('')||'<p>Sin solicitudes.</p>'}catch{}}window.statusA=async(id,status)=>{await api('/api/admin/appointments/status',{method:'POST',body:JSON.stringify({id,status})});appointments();dash()};async function people(){try{const d=await api('/api/admin/people');$("#people").innerHTML=d.people.map(p=>`<button class="row person" onclick="openPerson('${p.id}')"><b>${esc(p.full_name)}</b><span>${p.age??'Edad no indicada'}</span><span>${p.note_count||0} notas</span><span>${p.risk_count||0} alertas</span></button>`).join('')||'<p>Sin personas.</p>';const o='<option value="">Selecciona una persona</option>'+d.people.map(p=>`<option value="${p.id}">${esc(p.full_name)}</option>`).join('');$("#vocPerson").innerHTML=o;$("#aiPerson").innerHTML=o}catch{}}window.openPerson=async id=>{current=id;const d=await api(`/api/admin/person/${id}`);$("#detail").hidden=false;$("#detailName").textContent=d.person.full_name;$("#notes").innerHTML=d.notes.map(n=>`<p>${esc(n.note_text)}</p>`).join('')||'<p>Sin notas.</p>'};$("#saveNote").onclick=async()=>{if(!current||!$("#note").value.trim())return;await api('/api/admin/note',{method:'POST',body:JSON.stringify({person_id:current,note_text:$("#note").value})});$("#note").value='';openPerson(current);people()};$("#newPerson").onclick=()=>$("#personModal").hidden=false;$$('[data-pclose]').forEach(b=>b.onclick=()=>$("#personModal").hidden=true);$("#personForm").onsubmit=async e=>{e.preventDefault();await api('/api/admin/people',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target).entries()))});e.target.reset();$("#personModal").hidden=true;people();dash()};$("#vocPerson").onchange=async()=>{const id=$("#vocPerson").value;if(!id)return;const d=await api(`/api/admin/person/${id}`),v=d.vocational||{};$("#interests").value=v.interests||'';$("#strengths").value=v.strengths||'';$("#values").value=v.values_text||'';$("#subjects").value=v.favorite_subjects||'';$("#careers").value=v.careers_considered||'';$("#plan").value=v.guidance_plan||'';$("#aiContext").value=v.ai_context||''};$("#saveVoc").onclick=async()=>{const person_id=$("#vocPerson").value;if(!person_id)return;await api('/api/admin/vocational',{method:'POST',body:JSON.stringify({person_id,interests:$("#interests").value,strengths:$("#strengths").value,values_text:$("#values").value,favorite_subjects:$("#subjects").value,careers_considered:$("#careers").value,guidance_plan:$("#plan").value,ai_context:$("#aiContext").value})});alert('Mapa guardado')};$("#sendAI").onclick=async()=>{const person_id=$("#aiPerson").value,message=$("#aiMessage").value.trim();if(!person_id||!message)return;$("#aiReply").textContent='Pensando...';try{const d=await api('/api/admin/ai-reflection',{method:'POST',body:JSON.stringify({person_id,message})});$("#aiReply").textContent=(d.risk_flag?'⚠ Revisión humana recomendada\n\n':'')+d.reply;dash()}catch(e){$("#aiReply").textContent=e.message}};(async()=>{try{const d=await api('/api/admin/session');if(d.authenticated)show()}catch{}})();
+
+const $ = selector => document.querySelector(selector);
+const $$ = selector => [...document.querySelectorAll(selector)];
+
+let peopleCache = [];
+let currentPersonId = "";
+
+function escapeHTML(value) {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+  })[char]);
+}
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: { "content-type": "application/json", ...(options.headers || {}) }
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "Error");
+  return data;
+}
+
+async function showDashboard() {
+  $("#loginScreen").hidden = true;
+  $("#dashboardApp").hidden = false;
+  await Promise.all([loadDashboard(), loadAppointments(), loadPeople()]);
+}
+
+async function initSession() {
+  try {
+    const data = await api("/api/admin/session");
+    if (data.authenticated) await showDashboard();
+  } catch {}
+}
+
+$("#loginBtn").addEventListener("click", async () => {
+  $("#loginStatus").textContent = "";
+  try {
+    await api("/api/admin/login", {
+      method: "POST",
+      body: JSON.stringify({ password: $("#adminPassword").value })
+    });
+    await showDashboard();
+  } catch (error) {
+    $("#loginStatus").textContent = error.message;
+  }
+});
+
+$("#logoutBtn").addEventListener("click", async () => {
+  try {
+    await api("/api/admin/logout", { method: "POST" });
+  } finally {
+    location.reload();
+  }
+});
+
+$$(".nav-btn[data-tab]").forEach(button => {
+  button.addEventListener("click", () => {
+    $$(".nav-btn[data-tab]").forEach(item => item.classList.toggle("active", item === button));
+    $$(".admin-view").forEach(view => view.classList.remove("active"));
+    $(`#view-${button.dataset.tab}`).classList.add("active");
+    $("#viewTitle").textContent = {
+      dashboard: "Hoy",
+      agenda: "Agenda",
+      people: "Personas",
+      vocational: "Mapa vocacional",
+      ai: "Reflexión AI"
+    }[button.dataset.tab];
+  });
+});
+
+async function loadDashboard() {
+  try {
+    const data = await api("/api/admin/dashboard");
+    $("#statRequested").textContent = data.requested;
+    $("#statConfirmed").textContent = data.confirmed;
+    $("#statPeople").textContent = data.active_people;
+    $("#statRisk").textContent = data.risk_messages;
+  } catch {}
+}
+
+function renderAppointments(container, appointments, limit = null) {
+  const list = limit ? appointments.slice(0, limit) : appointments;
+  if (!list.length) {
+    container.innerHTML = `<p class="muted">No hay solicitudes todavía.</p>`;
+    return;
+  }
+
+  container.innerHTML = list.map(item => `
+    <div class="data-row appointment-row">
+      <div>
+        <strong>${escapeHTML(item.client_name)}</strong>
+        <span>${escapeHTML(item.service_type.replaceAll("_", " "))}${item.is_minor ? " · Menor" : ""}</span>
+      </div>
+      <div>
+        <strong>${escapeHTML(item.preferred_date)}</strong>
+        <span>${escapeHTML(item.preferred_time)}</span>
+      </div>
+      <div><span class="pill">${escapeHTML(item.status)}</span></div>
+      <div class="row-actions">
+        <button onclick="setAppointmentStatus('${item.id}','confirmed')">Confirmar</button>
+        <button onclick="setAppointmentStatus('${item.id}','completed')">Realizada</button>
+        <button onclick="setAppointmentStatus('${item.id}','cancelled')">Cancelar</button>
+      </div>
+    </div>
+  `).join("");
+}
+
+async function loadAppointments() {
+  try {
+    const data = await api("/api/admin/appointments");
+    renderAppointments($("#appointmentsList"), data.appointments);
+    renderAppointments($("#dashboardAppointments"), data.appointments.filter(item =>
+      item.status === "requested" || item.status === "confirmed"
+    ), 5);
+  } catch {}
+}
+
+window.setAppointmentStatus = async (id, status) => {
+  await api("/api/admin/appointments/status", {
+    method: "POST",
+    body: JSON.stringify({ id, status })
+  });
+  await Promise.all([loadAppointments(), loadDashboard()]);
+};
+
+$("#refreshAppointments").addEventListener("click", loadAppointments);
+
+async function loadPeople() {
+  try {
+    const data = await api("/api/admin/people");
+    peopleCache = data.people;
+
+    if (!peopleCache.length) {
+      $("#peopleList").innerHTML = `<p class="muted">Todavía no hay personas registradas.</p>`;
+    } else {
+      $("#peopleList").innerHTML = peopleCache.map(person => `
+        <button class="person-row" onclick="openPerson('${person.id}')">
+          <div>
+            <strong>${escapeHTML(person.full_name)}</strong>
+            <span>${person.age ?? "Edad no indicada"}${person.is_minor ? " · Menor" : ""}</span>
+          </div>
+          <div><span>${escapeHTML(person.phone || "Sin teléfono")}</span></div>
+          <div><span>${person.note_count || 0} notas privadas</span></div>
+          <div><span class="pill">${person.risk_count || 0} alertas AI</span></div>
+        </button>
+      `).join("");
+    }
+
+    const options = `<option value="">Selecciona una persona</option>` + peopleCache.map(person =>
+      `<option value="${person.id}">${escapeHTML(person.full_name)}</option>`
+    ).join("");
+    $("#vocPerson").innerHTML = options;
+    $("#aiPerson").innerHTML = options;
+  } catch {}
+}
+
+window.openPerson = async personId => {
+  currentPersonId = personId;
+  const data = await api(`/api/admin/person/${personId}`);
+  $("#personDetailPanel").hidden = false;
+  $("#personDetailName").textContent = data.person.full_name;
+  $("#personGeneral").innerHTML = `
+    <div class="detail-list">
+      <span>Edad <b>${data.person.age ?? "No indicada"}</b></span>
+      <span>Teléfono <b>${escapeHTML(data.person.phone || "—")}</b></span>
+      <span>Correo <b>${escapeHTML(data.person.email || "—")}</b></span>
+      <span>Tutor <b>${escapeHTML(data.person.guardian_name || "No aplica")}</b></span>
+    </div>
+  `;
+
+  $("#notesHistory").innerHTML = data.notes.length
+    ? data.notes.map(note => `
+        <article class="note-card">
+          <span>${new Date(note.created_at).toLocaleString()}</span>
+          <p>${escapeHTML(note.note_text)}</p>
+        </article>
+      `).join("")
+    : `<p class="muted">Todavía no hay notas privadas.</p>`;
+};
+
+$("#saveNoteBtn").addEventListener("click", async () => {
+  const note = $("#privateNote").value.trim();
+  if (!currentPersonId || !note) {
+    $("#noteStatus").textContent = "Selecciona una persona y escribe una nota.";
+    return;
+  }
+
+  try {
+    await api("/api/admin/note", {
+      method: "POST",
+      body: JSON.stringify({ person_id: currentPersonId, note_text: note })
+    });
+    $("#privateNote").value = "";
+    $("#noteStatus").style.color = "#96efb0";
+    $("#noteStatus").textContent = "Nota privada guardada.";
+    await Promise.all([openPerson(currentPersonId), loadPeople()]);
+  } catch (error) {
+    $("#noteStatus").style.color = "#ffb4b4";
+    $("#noteStatus").textContent = error.message;
+  }
+});
+
+$("#newPersonBtn").addEventListener("click", () => {
+  $("#personModal").hidden = false;
+  document.body.style.overflow = "hidden";
+});
+
+$$("[data-close-person]").forEach(button => {
+  button.addEventListener("click", () => {
+    $("#personModal").hidden = true;
+    document.body.style.overflow = "";
+  });
+});
+
+$("#personForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  $("#personStatus").textContent = "Guardando...";
+  try {
+    await api("/api/admin/people", {
+      method: "POST",
+      body: JSON.stringify(Object.fromEntries(new FormData(event.target).entries()))
+    });
+    event.target.reset();
+    $("#personStatus").style.color = "#96efb0";
+    $("#personStatus").textContent = "Ficha creada.";
+    await Promise.all([loadPeople(), loadDashboard()]);
+  } catch (error) {
+    $("#personStatus").style.color = "#ffb4b4";
+    $("#personStatus").textContent = error.message;
+  }
+});
+
+$("#vocPerson").addEventListener("change", async () => {
+  const personId = $("#vocPerson").value;
+  if (!personId) return;
+  const data = await api(`/api/admin/person/${personId}`);
+  const v = data.vocational || {};
+  $("#vocInterests").value = v.interests || "";
+  $("#vocStrengths").value = v.strengths || "";
+  $("#vocValues").value = v.values_text || "";
+  $("#vocSubjects").value = v.favorite_subjects || "";
+  $("#vocWorkStyle").value = v.work_style || "";
+  $("#vocCareers").value = v.careers_considered || "";
+  $("#vocQuestions").value = v.open_questions || "";
+  $("#vocPlan").value = v.guidance_plan || "";
+  $("#vocAIContext").value = v.ai_context || "";
+});
+
+$("#saveVocBtn").addEventListener("click", async () => {
+  const personId = $("#vocPerson").value;
+  if (!personId) {
+    $("#vocStatus").textContent = "Selecciona una persona.";
+    return;
+  }
+
+  try {
+    await api("/api/admin/vocational", {
+      method: "POST",
+      body: JSON.stringify({
+        person_id: personId,
+        interests: $("#vocInterests").value,
+        strengths: $("#vocStrengths").value,
+        values_text: $("#vocValues").value,
+        favorite_subjects: $("#vocSubjects").value,
+        work_style: $("#vocWorkStyle").value,
+        careers_considered: $("#vocCareers").value,
+        open_questions: $("#vocQuestions").value,
+        guidance_plan: $("#vocPlan").value,
+        ai_context: $("#vocAIContext").value
+      })
+    });
+    $("#vocStatus").style.color = "#96efb0";
+    $("#vocStatus").textContent = "Mapa vocacional guardado.";
+  } catch (error) {
+    $("#vocStatus").style.color = "#ffb4b4";
+    $("#vocStatus").textContent = error.message;
+  }
+});
+
+$$(".example-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    $("#aiMessage").value = btn.dataset.fill || "";
+  });
+});
+
+$("#aiSendBtn").addEventListener("click", async () => {
+  const personId = $("#aiPerson").value;
+  const message = $("#aiMessage").value.trim();
+  if (!personId || !message) {
+    $("#aiReply").textContent = "Selecciona una persona y escribe un mensaje.";
+    return;
+  }
+
+  $("#aiReply").textContent = "Pensando...";
+  try {
+    const data = await api("/api/admin/ai-reflection", {
+      method: "POST",
+      body: JSON.stringify({ person_id: personId, message })
+    });
+    $("#aiReply").textContent = (data.risk_flag ? "⚠ Revisión humana recomendada\n\n" : "") + data.reply;
+    await loadDashboard();
+  } catch (error) {
+    $("#aiReply").textContent = error.message;
+  }
+});
+
+initSession();
