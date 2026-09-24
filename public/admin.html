@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>NORTIA | Panel profesional</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="admin-body">
+
+<section class="login-screen" id="loginScreen">
+  <div class="login-card">
+    <div class="brand login-brand">
+      <span class="brand-mark">A</span>
+      <div>
+        <small>ALEX</small>
+        <strong>ORIENTA</strong>
+      </div>
+    </div>
+
+    <span class="eyebrow">ACCESO PROFESIONAL</span>
+    <h1>Panel privado</h1>
+    <p class="muted">Ingresa tu contraseña para continuar.</p>
+
+    <input
+      id="adminPassword"
+      type="password"
+      autocomplete="current-password"
+      placeholder="Contraseña"
+    >
+
+    <button class="primary-btn full" id="loginBtn">ENTRAR</button>
+    <div id="loginStatus" class="status"></div>
+  </div>
+</section>
+
+<div class="admin-layout" id="secureApp" hidden>
+  <aside class="sidebar">
+    <div class="brand admin-brand">
+      <span class="brand-mark">A</span>
+      <div>
+        <small>ALEX</small>
+        <strong>ORIENTA</strong>
+      </div>
+    </div>
+
+    <button class="nav-btn active" data-tab="dashboard">Hoy</button>
+    <button class="nav-btn" data-tab="agenda">Agenda</button>
+    <button class="nav-btn" data-tab="people">Personas</button>
+    <button class="nav-btn" data-tab="vocational">Mapa vocacional</button>
+    <button class="nav-btn" data-tab="ai">NORTIA Reflexión</button>
+    <button class="nav-btn logout" id="logoutBtn">Cerrar sesión</button>
+  </aside>
+
+  <main class="admin-main">
+    <header class="admin-header">
+      <div>
+        <span class="eyebrow">PANEL PROFESIONAL · V6</span>
+        <h1 id="viewTitle">Hoy</h1>
+      </div>
+    </header>
+
+    <section class="admin-view active" id="view-dashboard">
+      <div class="stats">
+        <article><span>Solicitudes nuevas</span><strong id="statRequested">0</strong></article>
+        <article><span>Citas confirmadas</span><strong id="statConfirmed">0</strong></article>
+        <article><span>Personas activas</span><strong id="statPeople">0</strong></article>
+        <article><span>Alertas AI</span><strong id="statRisk">0</strong></article>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow">AGENDA</span>
+            <h2>Próximas solicitudes</h2>
+          </div>
+        </div>
+        <div id="dashboardAppointments"></div>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-agenda">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow">AGENDA</span>
+            <h2>Solicitudes de cita</h2>
+          </div>
+          <button class="secondary-btn" id="refreshAppointments">Actualizar</button>
+        </div>
+        <div id="appointmentsList"></div>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-people">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow">PERSONAS</span>
+            <h2>Registro y seguimiento</h2>
+          </div>
+          <button class="primary-btn small" id="newPersonBtn">+ AGREGAR PERSONA</button>
+        </div>
+        <div id="peopleList"></div>
+      </div>
+
+      <div class="panel" id="personDetailPanel" hidden>
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow">FICHA</span>
+            <h2 id="personDetailName">Persona</h2>
+          </div>
+        </div>
+
+        <div class="person-workspace">
+          <section class="workspace-card">
+            <div class="workspace-title">
+              <div>
+                <span class="eyebrow">DATOS</span>
+                <h3>Datos generales</h3>
+              </div>
+            </div>
+            <div id="personGeneral"></div>
+          </section>
+
+          <section class="workspace-card access-card">
+            <div class="workspace-title">
+              <div>
+                <span class="eyebrow">MI ESPACIO</span>
+                <h3>Acceso individual</h3>
+              </div>
+              <button class="secondary-btn" id="createAccessBtn">CREAR / REGENERAR ACCESO</button>
+            </div>
+
+            <div id="accessSummary" class="access-summary">
+              Aún no se ha consultado el acceso.
+            </div>
+
+            <div id="accessCodeResult" class="access-code-result" hidden></div>
+
+            <div class="access-settings">
+              <label class="toggle-line">
+                <input id="accessActive" type="checkbox" checked>
+                <span>Acceso activo</span>
+              </label>
+
+              <label class="toggle-line">
+                <input id="accessConsent" type="checkbox">
+                <span>Consentimiento confirmado</span>
+              </label>
+
+              <label class="toggle-line">
+                <input id="accessAI" type="checkbox">
+                <span>Habilitar NORTIA Reflexión</span>
+              </label>
+
+              <button class="primary-btn small" id="saveAccessSettingsBtn">
+                GUARDAR ACCESO
+              </button>
+            </div>
+
+            <p class="microcopy">
+              En personas menores, confirma el consentimiento correspondiente antes de habilitar la IA.
+            </p>
+            <div id="accessStatus" class="status"></div>
+            <div class="admin-ai-usage">
+              <div><span class="eyebrow">NORTIA REFLEXIÓN</span><strong id="adminAIUsageText">Uso de hoy: —</strong></div>
+              <button class="secondary-btn" id="grantAIMessagesBtn">+5 MENSAJES HOY</button>
+            </div>
+          </section>
+        </div>
+
+        <section class="workspace-card">
+          <div class="workspace-title">
+            <div>
+              <span class="eyebrow">SEGUIMIENTO</span>
+              <h3>Nueva sesión / seguimiento</h3>
+            </div>
+          </div>
+
+          <div class="two-cols">
+            <label>Fecha
+              <input id="followupDate" type="date">
+            </label>
+            <label>Título
+              <input id="followupTitle" placeholder="Ej. Sesión 2 · Exploración de opciones">
+            </label>
+          </div>
+
+          <label>Nota privada de Alex
+            <textarea id="followupPrivate" rows="5" placeholder="Solo Alex. Nunca se comparte automáticamente con la persona ni con la IA."></textarea>
+          </label>
+
+          <label>Resumen que sí puede ver la persona
+            <textarea id="followupShared" rows="4" placeholder="Resumen breve del trabajo realizado."></textarea>
+          </label>
+
+          <div class="two-cols">
+            <label>Acuerdos
+              <textarea id="followupAgreements" rows="4"></textarea>
+            </label>
+            <label>Siguientes pasos
+              <textarea id="followupNext" rows="4"></textarea>
+            </label>
+          </div>
+
+          <button class="primary-btn small" id="saveFollowupBtn">GUARDAR SEGUIMIENTO</button>
+          <div id="followupStatus" class="status"></div>
+
+          <div id="followupHistory" class="timeline"></div>
+        </section>
+
+        <section class="workspace-card">
+          <div class="workspace-title">
+            <div>
+              <span class="eyebrow">CAMPOS FLEXIBLES</span>
+              <h3>Información personalizada</h3>
+            </div>
+          </div>
+
+          <div class="custom-field-form">
+            <input id="customFieldName" placeholder="Nombre del campo · Ej. Universidades consideradas">
+            <textarea id="customFieldValue" rows="3" placeholder="Contenido libre"></textarea>
+
+            <select id="customFieldVisibility">
+              <option value="private">Solo Alex</option>
+              <option value="shared">Visible en Mi Espacio</option>
+              <option value="ai">Solo contexto para IA</option>
+              <option value="shared_ai">Visible + contexto para IA</option>
+            </select>
+
+            <button class="secondary-btn" id="addCustomFieldBtn">+ AGREGAR CAMPO</button>
+          </div>
+
+          <div id="customFieldsList" class="custom-fields-list"></div>
+          <div id="customFieldStatus" class="status"></div>
+        </section>
+
+        <section class="workspace-card">
+          <div class="workspace-title">
+            <div>
+              <span class="eyebrow">ENTRE SESIONES</span>
+              <h3>Ejercicios / actividades</h3>
+            </div>
+          </div>
+
+          <div class="two-cols">
+            <label>Título
+              <input id="exerciseTitle" placeholder="Ej. Comparar dos carreras">
+            </label>
+            <label>Fecha sugerida
+              <input id="exerciseDue" type="date">
+            </label>
+          </div>
+
+          <label>Indicaciones
+            <textarea id="exerciseDescription" rows="4"></textarea>
+          </label>
+
+          <label class="toggle-line">
+            <input id="exerciseShared" type="checkbox" checked>
+            <span>Mostrar en Mi Espacio</span>
+          </label>
+
+          <button class="secondary-btn" id="addExerciseBtn">+ AGREGAR ACTIVIDAD</button>
+          <div id="exerciseList" class="exercise-admin-list"></div>
+          <div id="exerciseStatus" class="status"></div>
+        </section>
+
+        <section class="workspace-card">
+          <div class="workspace-title">
+            <div>
+              <span class="eyebrow">NOTAS RÁPIDAS</span>
+              <h3>Nota privada adicional</h3>
+            </div>
+          </div>
+
+          <textarea id="privateNote" rows="5" placeholder="Esta nota queda exclusivamente para Alex."></textarea>
+          <button class="secondary-btn" id="saveNoteBtn">GUARDAR NOTA PRIVADA</button>
+          <div id="noteStatus" class="status"></div>
+
+          <div id="notesHistory"></div>
+        </section>
+
+        <section class="workspace-card">
+          <div class="workspace-title">
+            <div>
+              <span class="eyebrow">NORTIA REFLEXIÓN</span>
+              <h3>Actividad reciente del usuario</h3>
+            </div>
+          </div>
+          <div id="clientAIHistory"></div>
+        </section>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-vocational">
+      <div class="panel">
+        <span class="eyebrow">MAPA VOCACIONAL</span>
+        <h2>Información del proceso</h2>
+        <p class="muted">
+          “Contexto permitido para IA” es el espacio donde Alex decide
+          qué información adicional puede utilizar NORTIA Reflexión.
+        </p>
+
+        <select id="vocPerson"></select>
+
+        <div class="form-stack">
+          <label>Intereses<textarea id="vocInterests"></textarea></label>
+          <label>Fortalezas<textarea id="vocStrengths"></textarea></label>
+          <label>Valores<textarea id="vocValues"></textarea></label>
+          <label>Materias favoritas<textarea id="vocSubjects"></textarea></label>
+          <label>Estilo de trabajo<textarea id="vocWorkStyle"></textarea></label>
+          <label>Carreras consideradas<textarea id="vocCareers"></textarea></label>
+          <label>Preguntas abiertas<textarea id="vocQuestions"></textarea></label>
+          <label>Plan de orientación definido por Alex<textarea id="vocPlan"></textarea></label>
+          <label class="ai-context-label">Contexto permitido para IA
+            <textarea id="vocAIContext" placeholder="Solo información que Alex autoriza que la IA conozca."></textarea>
+          </label>
+
+          <button class="primary-btn" id="saveVocBtn">GUARDAR MAPA</button>
+          <div id="vocStatus" class="status"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-ai">
+      <div class="panel ai-panel">
+        <div class="panel-head ai-head">
+          <div>
+            <span class="eyebrow">NORTIA REFLEXIÓN</span>
+            <h2>Asistente interno de orientación</h2>
+            <p class="muted">
+              Prueba respuestas antes de habilitar esta herramienta para usuarios.
+              Las notas privadas de Alex no se incluyen en el contexto.
+            </p>
+          </div>
+
+          <button class="secondary-btn" id="testAIButton">
+            ⚡ PROBAR CONEXIÓN IA
+          </button>
+        </div>
+
+        <div id="aiHealth" class="ai-health"></div>
+
+        <label>
+          Persona / modo de prueba
+          <select id="aiPerson">
+            <option value="__demo__">Prueba general sin persona</option>
+          </select>
+        </label>
+
+        <div class="prompt-examples">
+          <button class="example-btn" data-fill="Ayúdame a comparar medicina e ingeniería según mis intereses.">Comparar opciones</button>
+          <button class="example-btn" data-fill="No sé qué carrera elegir porque me gustan varias materias.">Duda vocacional</button>
+          <button class="example-btn" data-fill="Ayúdame a organizar mis ideas antes de hablar con mis papás sobre mi carrera.">Preparar conversación</button>
+        </div>
+
+        <textarea id="aiMessage" rows="6" placeholder="Escribe una situación concreta..."></textarea>
+
+        <button class="primary-btn" id="aiSendBtn">⚡ GENERAR REFLEXIÓN</button>
+
+        <div id="aiReply" class="ai-reply"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="modal" id="personModal" hidden>
+  <div class="modal-backdrop" data-close-person></div>
+  <div class="modal-card">
+    <button class="modal-close" type="button" data-close-person>×</button>
+    <span class="eyebrow">NUEVA PERSONA</span>
+    <h2>Crear ficha</h2>
+
+    <form id="personForm">
+      <label>Nombre completo<input name="full_name" required></label>
+
+      <div class="two-cols">
+        <label>Edad<input name="age" type="number"></label>
+        <label>Teléfono<input name="phone"></label>
+      </div>
+
+      <label>Correo<input name="email" type="email"></label>
+
+      <div class="guardian-box">
+        <p>Datos de tutor, si aplica.</p>
+        <label>Nombre del tutor<input name="guardian_name"></label>
+        <div class="two-cols">
+          <label>Teléfono tutor<input name="guardian_phone"></label>
+          <label>Correo tutor<input name="guardian_email" type="email"></label>
+        </div>
+      </div>
+
+      <button class="primary-btn full" type="submit">CREAR FICHA</button>
+      <div id="personStatus" class="status"></div>
+    </form>
+  </div>
+</div>
+
+<script src="/admin.js"></script>
+</body>
+</html>
