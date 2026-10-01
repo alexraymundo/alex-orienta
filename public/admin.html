@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>NORTIA | Panel profesional</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="admin-body">
+
+<section class="login-screen" id="loginScreen">
+  <div class="login-card">
+    <div class="brand login-brand">
+      <span class="brand-mark">N</span>
+      <div>
+        <small>CLARIDAD PARA TU SIGUIENTE PASO</small>
+        <strong>NORTIA</strong>
+      </div>
+    </div>
+
+    <span class="eyebrow">ACCESO PROFESIONAL</span>
+    <h1>Panel privado</h1>
+    <p class="muted">Ingresa tu contraseña para continuar.</p>
+
+    <input
+      id="adminPassword"
+      type="password"
+      autocomplete="current-password"
+      placeholder="Contraseña"
+    >
+
+    <button class="primary-btn full" id="loginBtn">ENTRAR</button>
+    <div id="loginStatus" class="status"></div>
+  </div>
+</section>
+
+<div class="admin-layout" id="secureApp" hidden>
+  <aside class="sidebar">
+    <div class="brand admin-brand">
+      <span class="brand-mark">N</span>
+      <div>
+        <small>CLARIDAD PARA TU SIGUIENTE PASO</small>
+        <strong>NORTIA</strong>
+      </div>
+    </div>
+
+    <div class="sidebar-section-label">MI PRÁCTICA</div>
+    <button class="nav-btn active" data-tab="dashboard">Hoy</button>
+    <button class="nav-btn" data-tab="agenda">Agenda</button>
+    <button class="nav-btn" data-tab="people">Personas</button>
+    <button class="nav-btn" data-tab="vocational">Mapa vocacional</button>
+    <button class="nav-btn" data-tab="ai">NORTIA Reflexión</button>
+    <button class="nav-btn" data-tab="notifications">
+      Notificaciones <span class="notification-badge" id="notificationBadge" hidden>0</span>
+    </button>
+    <button class="nav-btn" data-tab="security">Seguridad</button>
+
+    <div class="sidebar-separator"></div>
+    <div class="sidebar-section-label">CONTEXTO ESCOLAR</div>
+    <button class="nav-btn cideb-nav-btn" data-tab="cideb">
+      <span class="cideb-nav-mark">C</span>
+      <span><strong>CIDEB</strong><small>Seguimiento escolar</small></span>
+    </button>
+
+    <button class="nav-btn logout" id="logoutBtn">Cerrar sesión</button>
+  </aside>
+
+  <main class="admin-main">
+    <header class="admin-header">
+      <div>
+        <span class="eyebrow">PANEL PROFESIONAL · V7.5</span>
+        <h1 id="viewTitle">Hoy</h1>
+      </div>
+      <div class="global-search-shell">
+        <span class="search-symbol">⌕</span>
+        <input id="globalPersonSearch" autocomplete="off" placeholder="Buscar en NORTIA...">
+        <div id="globalSearchResults" class="global-search-results" hidden></div>
+      </div>
+    </header>
+
+    <section class="admin-view active" id="view-dashboard">
+      <div class="stats">
+        <article><span>Solicitudes nuevas</span><strong id="statRequested">0</strong></article>
+        <article><span>Citas confirmadas</span><strong id="statConfirmed">0</strong></article>
+        <article><span>Personas activas</span><strong id="statPeople">0</strong></article>
+        <article><span>Alertas AI</span><strong id="statRisk">0</strong></article>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow">AGENDA</span>
+            <h2>Próximas solicitudes</h2>
+          </div>
+        </div>
+        <div id="dashboardAppointments"></div>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-agenda">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow">AGENDA</span>
+            <h2>Solicitudes de cita</h2>
+          </div>
+          <button class="secondary-btn" id="refreshAppointments">Actualizar</button>
+        </div>
+        <div id="appointmentsList"></div>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-people">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow">PERSONAS</span>
+            <h2>Registro y seguimiento</h2>
+          </div>
+          <button class="primary-btn small" id="newPersonBtn">+ AGREGAR PERSONA</button>
+        </div>
+        <div id="peopleList"></div>
+      </div>
+
+      <div class="panel" id="personDetailPanel" hidden>
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow">FICHA</span>
+            <h2 id="personDetailName">Persona</h2>
+          </div>
+        </div>
+
+        <div class="person-workspace">
+          <section class="workspace-card">
+            <div class="workspace-title">
+              <div>
+                <span class="eyebrow">DATOS</span>
+                <h3>Datos generales</h3>
+              </div>
+            </div>
+            <div id="personGeneral"></div>
+          </section>
+
+
+          <section class="workspace-card program-card">
+            <div class="workspace-title"><div><span class="eyebrow">TIPO DE PROCESO</span><h3>Permisos principales</h3></div></div>
+            <label class="toggle-line"><input id="programTherapy" type="checkbox"><span>Proceso terapéutico activo con Alex</span></label>
+            <label class="toggle-line"><input id="programSchool" type="checkbox"><span>Seguimiento escolar activo</span></label>
+            <div class="two-cols"><label>Escuela<input id="programSchoolName"></label><label>Grado<input id="programGrade"></label></div>
+            <label>Ciclo escolar<input id="programYear" placeholder="Ej. 2026–2027"></label>
+            <hr class="soft-rule">
+            <span class="eyebrow">ORIGEN DEL EXPEDIENTE</span>
+            <label>Contexto<select id="dataContextType"><option value="private">Consulta / proceso privado</option><option value="cideb">Exclusivamente CIDEB</option><option value="mixed">CIDEB + proceso privado</option><option value="other">Otra institución / contexto</option></select></label>
+            <label>Institución<input id="dataInstitution" placeholder="Ej. CIDEB"></label>
+            <button class="secondary-btn" id="saveProgramBtn">GUARDAR TIPO DE PROCESO Y CONTEXTO</button>
+            <p class="microcopy">NORTIA Reflexión solo puede habilitarse cuando “Proceso terapéutico activo con Alex” está marcado. Docentes y familias nunca tienen acceso a IA.</p>
+            <div id="programStatus" class="status"></div>
+          </section>
+          <section class="workspace-card data-management-card">
+            <div class="workspace-title"><div><span class="eyebrow">GESTIÓN DE DATOS</span><h3>Archivo y eliminación</h3></div><span id="personStatusBadge" class="data-status-badge">ACTIVO</span></div>
+            <p class="muted">Archivar bloquea accesos y retira al estudiante de los portales activos, pero conserva el historial. La eliminación definitiva no puede deshacerse.</p>
+            <label>Motivo para archivar<input id="archiveReason" placeholder="Ej. terminó ciclo escolar, cambió de escuela..."></label>
+            <div class="data-action-row"><button class="secondary-btn" id="archivePersonBtn">ARCHIVAR EXPEDIENTE</button><button class="secondary-btn" id="reactivatePersonBtn" hidden>REACTIVAR EXPEDIENTE</button></div>
+            <div class="danger-zone"><span class="eyebrow">ZONA DE ELIMINACIÓN</span><strong>Eliminar expediente definitivamente</strong><p>Se eliminan los datos enlazados directamente a esta ficha. Las solicitudes de cita independientes no enlazadas por ID no se eliminan automáticamente.</p><label>Para confirmar escribe:<code id="deletePersonPhrase">ELIMINAR NOMBRE</code><input id="deletePersonConfirmation" autocomplete="off"></label><button class="danger-btn" id="deletePersonBtn">ELIMINAR DEFINITIVAMENTE</button></div>
+            <div id="personDataStatus" class="status"></div>
+          </section>
+          <section class="workspace-card access-card">
+            <div class="workspace-title">
+              <div>
+                <span class="eyebrow">MI ESPACIO</span>
+                <h3>Acceso individual</h3>
+              </div>
+              <button class="secondary-btn" id="createAccessBtn">CREAR / REGENERAR ACCESO</button>
+            </div>
+
+            <div id="accessSummary" class="access-summary">
+              Aún no se ha consultado el acceso.
+            </div>
+
+            <div id="accessCodeResult" class="access-code-result" hidden></div>
+
+            <div class="access-settings">
+              <label class="toggle-line">
+                <input id="accessActive" type="checkbox" checked>
+                <span>Acceso activo</span>
+              </label>
+
+              <label class="toggle-line">
+                <input id="accessConsent" type="checkbox">
+                <span>Consentimiento confirmado</span>
+              </label>
+
+              <label class="toggle-line">
+                <input id="accessAI" type="checkbox">
+                <span>Habilitar NORTIA Reflexión</span>
+              </label>
+
+              <button class="primary-btn small" id="saveAccessSettingsBtn">
+                GUARDAR ACCESO
+              </button>
+            </div>
+
+            <p class="microcopy">
+              En personas menores, confirma el consentimiento correspondiente antes de habilitar la IA.
+            </p>
+            <div id="accessStatus" class="status"></div>
+            <div class="admin-ai-usage">
+              <div><span class="eyebrow">NORTIA REFLEXIÓN</span><strong id="adminAIUsageText">Uso de hoy: —</strong></div>
+              <button class="secondary-btn" id="grantAIMessagesBtn">+5 MENSAJES HOY</button>
+            </div>
+          </section>
+        </div>
+
+        <section class="workspace-card">
+          <div class="workspace-title">
+            <div>
+              <span class="eyebrow">SEGUIMIENTO</span>
+              <h3>Nueva sesión / seguimiento</h3>
+            </div>
+          </div>
+
+          <div class="two-cols">
+            <label>Fecha
+              <input id="followupDate" type="date">
+            </label>
+            <label>Título
+              <input id="followupTitle" placeholder="Ej. Sesión 2 · Exploración de opciones">
+            </label>
+          </div>
+
+          <label>Nota profesional privada
+            <textarea id="followupPrivate" rows="5" placeholder="Solo profesional. Nunca se comparte automáticamente con la persona ni con la IA."></textarea>
+          </label>
+
+          <label>Resumen que sí puede ver la persona
+            <textarea id="followupShared" rows="4" placeholder="Resumen breve del trabajo realizado."></textarea>
+          </label>
+
+          <div class="two-cols">
+            <label>Acuerdos
+              <textarea id="followupAgreements" rows="4"></textarea>
+            </label>
+            <label>Siguientes pasos
+              <textarea id="followupNext" rows="4"></textarea>
+            </label>
+          </div>
+
+          <button class="primary-btn small" id="saveFollowupBtn">GUARDAR SEGUIMIENTO</button>
+          <div id="followupStatus" class="status"></div>
+
+          <div id="followupHistory" class="timeline"></div>
+        </section>
+
+        <section class="workspace-card">
+          <div class="workspace-title">
+            <div>
+              <span class="eyebrow">CAMPOS FLEXIBLES</span>
+              <h3>Información personalizada</h3>
+            </div>
+          </div>
+
+          <div class="custom-field-form">
+            <input id="customFieldName" placeholder="Nombre del campo · Ej. Universidades consideradas">
+            <textarea id="customFieldValue" rows="3" placeholder="Contenido libre"></textarea>
+
+            <select id="customFieldVisibility">
+              <option value="private">Solo profesional</option>
+              <option value="shared">Visible en Mi Espacio</option>
+              <option value="ai">Solo contexto para IA</option>
+              <option value="shared_ai">Visible + contexto para IA</option>
+            </select>
+
+            <button class="secondary-btn" id="addCustomFieldBtn">+ AGREGAR CAMPO</button>
+          </div>
+
+          <div id="customFieldsList" class="custom-fields-list"></div>
+          <div id="customFieldStatus" class="status"></div>
+        </section>
+
+        <section class="workspace-card">
+          <div class="workspace-title">
+            <div>
+              <span class="eyebrow">ENTRE SESIONES</span>
+              <h3>Ejercicios / actividades</h3>
+            </div>
+          </div>
+
+          <div class="two-cols">
+            <label>Título
+              <input id="exerciseTitle" placeholder="Ej. Comparar dos carreras">
+            </label>
+            <label>Fecha sugerida
+              <input id="exerciseDue" type="date">
+            </label>
+          </div>
+
+          <label>Indicaciones
+            <textarea id="exerciseDescription" rows="4"></textarea>
+          </label>
+
+          <label class="toggle-line">
+            <input id="exerciseShared" type="checkbox" checked>
+            <span>Mostrar en Mi Espacio</span>
+          </label>
+
+          <button class="secondary-btn" id="addExerciseBtn">+ AGREGAR ACTIVIDAD</button>
+          <div id="exerciseList" class="exercise-admin-list"></div>
+          <div id="exerciseStatus" class="status"></div>
+        </section>
+
+        <section class="workspace-card">
+          <div class="workspace-title">
+            <div>
+              <span class="eyebrow">NOTAS RÁPIDAS</span>
+              <h3>Nota privada adicional</h3>
+            </div>
+          </div>
+
+          <textarea id="privateNote" rows="5" placeholder="Esta nota queda exclusivamente para Alex."></textarea>
+          <button class="secondary-btn" id="saveNoteBtn">GUARDAR NOTA PRIVADA</button>
+          <div id="noteStatus" class="status"></div>
+
+          <div id="notesHistory"></div>
+        </section>
+
+        <section class="workspace-card">
+          <div class="workspace-title">
+            <div>
+              <span class="eyebrow">NORTIA REFLEXIÓN</span>
+              <h3>Actividad reciente del usuario</h3>
+            </div>
+          </div>
+          <div id="clientAIHistory"></div>
+        </section>
+      </div>
+    </section>
+
+
+    <section class="admin-view" id="view-cideb">
+      <div class="cideb-hero panel">
+        <div>
+          <span class="eyebrow">ESPACIO CIDEB</span>
+          <h2>Seguimiento escolar separado de tu práctica privada</h2>
+          <p class="muted">Aquí se concentra únicamente lo relacionado con docentes, observaciones escolares, continuidad, familias y controles institucionales.</p>
+        </div>
+        <span class="cideb-context-pill">CIDEB · CONTEXTO ESCOLAR</span>
+      </div>
+      <div class="cideb-subnav">
+        <button data-cideb-open="cideb">Resumen</button>
+        <button data-cideb-open="students">Alumnos</button>
+        <button data-cideb-open="teachers">Docentes</button>
+        <button data-cideb-open="observations">Observaciones</button>
+        <button data-cideb-open="continuity">Informes visuales</button>
+        <button data-cideb-open="families">Familias</button>
+        <button data-cideb-open="cideb-security">Seguridad CIDEB</button>
+      </div>
+      <div id="cidebOverviewStats" class="cideb-overview-stats"></div>
+      <div class="cideb-pending-strip" id="cidebPendingStrip"></div>
+      <div class="cideb-module-grid">
+        <button data-cideb-open="students"><span>01</span><strong>Alumnos</strong><small>Directorio, búsqueda, matrícula, grado, grupo y ciclo escolar.</small></button>
+        <button data-cideb-open="teachers"><span>02</span><strong>Docentes</strong><small>Accesos, asignaciones y ciclos escolares.</small></button>
+        <button data-cideb-open="observations"><span>03</span><strong>Observaciones</strong><small>Revisa registros docentes y familiares antes de incorporarlos.</small></button>
+        <button data-cideb-open="continuity"><span>04</span><strong>Informes visuales</strong><small>Construye y previsualiza exactamente lo que verá el maestro.</small></button>
+        <button data-cideb-open="families"><span>05</span><strong>Familias</strong><small>Accesos y contenido autorizado para padres o tutores.</small></button>
+        <button data-cideb-open="cideb-security"><span>06</span><strong>Seguridad CIDEB</strong><small>Cierre de accesos y gestión institucional.</small></button>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-students">
+      <div class="cideb-subnav">
+        <button data-cideb-open="cideb">Resumen</button>
+        <button data-cideb-open="students">Alumnos</button>
+        <button data-cideb-open="teachers">Docentes</button>
+        <button data-cideb-open="observations">Observaciones</button>
+        <button data-cideb-open="continuity">Informes visuales</button>
+        <button data-cideb-open="families">Familias</button>
+        <button data-cideb-open="cideb-security">Seguridad CIDEB</button>
+      </div>
+
+      <div class="panel student-directory-panel">
+        <div class="directory-head">
+          <div>
+            <span class="eyebrow">CIDEB · DIRECTORIO</span>
+            <h2>Alumnos</h2>
+            <p class="muted">Busca sin cargar toda la base. Los filtros consultan directamente la base de datos.</p>
+          </div>
+          <div class="directory-actions">
+            <button class="secondary-btn" id="openImportStudentsBtn">IMPORTAR CSV</button>
+            <button class="secondary-btn" id="openCycleBtn">NUEVO CICLO</button>
+            <button class="primary-btn" id="openNewCidebStudentBtn">+ AGREGAR ALUMNO</button>
+          </div>
+        </div>
+
+        <div class="recent-students" id="recentStudentsBar" hidden></div>
+
+        <div class="directory-search-row">
+          <div class="directory-search-box">
+            <span>⌕</span>
+            <input id="cidebStudentSearch" autocomplete="off" placeholder="Nombre, matrícula, grado o grupo...">
+          </div>
+          <select id="cidebYearFilter"><option value="">Todos los ciclos</option></select>
+          <select id="cidebGradeFilter"><option value="">Todos los grados</option></select>
+          <select id="cidebGroupFilter"><option value="">Todos los grupos</option></select>
+          <select id="cidebTeacherFilter"><option value="">Todos los docentes</option></select>
+          <select id="cidebStatusFilter"><option value="active">Activos</option><option value="archived">Archivados</option><option value="all">Todos</option></select>
+        </div>
+
+        <div class="directory-meta-row">
+          <span id="cidebDirectoryCount">0 alumnos</span>
+          <label>Mostrar
+            <select id="cidebPageSize"><option value="25">25</option><option value="50">50</option></select>
+          </label>
+        </div>
+
+        <div class="student-directory-table" id="cidebStudentsTable"></div>
+        <div class="directory-pagination" id="cidebPagination"></div>
+      </div>
+
+      <aside class="student-quick-panel" id="cidebStudentQuickPanel" hidden>
+        <button class="quick-panel-close" id="closeCidebStudentPanel">×</button>
+        <div id="cidebStudentQuickContent"></div>
+      </aside>
+    </section>
+
+    <section class="admin-view" id="view-teachers">
+      <div class="cideb-subnav">
+        <button data-cideb-open="cideb">Resumen</button>
+        <button data-cideb-open="students">Alumnos</button>
+        <button data-cideb-open="teachers">Docentes</button>
+        <button data-cideb-open="observations">Observaciones</button>
+        <button data-cideb-open="continuity">Informes visuales</button>
+        <button data-cideb-open="families">Familias</button>
+        <button data-cideb-open="cideb-security">Seguridad CIDEB</button>
+      </div>
+      <div class="panel"><div class="panel-head"><div><span class="eyebrow">DOCENTES</span><h2>Accesos y asignaciones</h2><p class="muted">Cada docente tiene acceso individual, firma el acuerdo de confidencialidad y solo ve alumnos asignados.</p></div></div>
+        <div class="admin-form-grid"><label>Nombre del docente<input id="teacherName"></label><label>Correo<input id="teacherEmail" type="email"></label><label>Escuela<input id="teacherSchool"></label><label>Alumno<select id="teacherStudent"></select></label><label>Ciclo escolar<input id="teacherYear" placeholder="2026–2027"></label><button class="primary-btn" id="createTeacherBtn">CREAR ACCESO DOCENTE</button></div><div id="teacherCreateResult" class="access-code-result" hidden></div><div id="teacherAdminStatus" class="status"></div><div id="adminTeachersList" class="admin-record-list"></div>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-observations">
+      <div class="cideb-subnav">
+        <button data-cideb-open="cideb">Resumen</button>
+        <button data-cideb-open="students">Alumnos</button>
+        <button data-cideb-open="teachers">Docentes</button>
+        <button data-cideb-open="observations">Observaciones</button>
+        <button data-cideb-open="continuity">Informes visuales</button>
+        <button data-cideb-open="families">Familias</button>
+        <button data-cideb-open="cideb-security">Seguridad CIDEB</button>
+      </div>
+      <div class="panel"><span class="eyebrow">OBSERVACIONES</span><h2>Registros pendientes de revisión</h2><p class="muted">Los registros docentes y familiares son observaciones, no diagnósticos. Alex puede complementarlos antes de incorporarlos a un resumen.</p><div class="observation-columns"><div><h3>Docentes</h3><div id="adminTeacherObservations"></div></div><div><h3>Familia</h3><div id="adminFamilyObservations"></div></div></div></div>
+    </section>
+
+    <section class="admin-view" id="view-continuity">
+      <div class="cideb-subnav">
+        <button data-cideb-open="cideb">Resumen</button>
+        <button data-cideb-open="students">Alumnos</button>
+        <button data-cideb-open="teachers">Docentes</button>
+        <button data-cideb-open="observations">Observaciones</button>
+        <button data-cideb-open="continuity">Informes visuales</button>
+        <button data-cideb-open="families">Familias</button>
+        <button data-cideb-open="cideb-security">Seguridad CIDEB</button>
+      </div>
+      <div class="panel continuity-header-panel">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow">CIDEB · INFORME DE CONTINUIDAD</span>
+            <h2>Construye el informe que verá el maestro</h2>
+            <p class="muted">El lado derecho es una vista previa del portal docente. Las gráficas se calculan con observaciones registradas; el texto solo se publica cuando tú lo apruebas.</p>
+          </div>
+          <span class="report-safety-pill">NO DIAGNÓSTICO</span>
+        </div>
+        <label class="continuity-person-picker">Alumno<select id="continuityPerson"></select></label>
+      </div>
+
+      <div class="continuity-workbench">
+        <section class="panel continuity-editor">
+          <div class="editor-section-head"><span>CONTENIDO PROFESIONAL</span><div class="editor-state-stack"><small id="continuityVersionLabel">Sin versiones publicadas</small><strong id="continuityDraftState">BORRADOR</strong></div></div>
+          <div id="adminSchoolSnapshot" class="snapshot-card compact-snapshot"></div>
+          <div class="form-stack">
+            <label>Descripción general<textarea id="contGeneral" rows="5" placeholder="Resumen descriptivo y útil para el docente. Evita diagnósticos o etiquetas."></textarea></label>
+            <label>Fortalezas observadas<textarea id="contStrengths" rows="4" placeholder="Capacidades, recursos, intereses o respuestas positivas observadas."></textarea></label>
+            <label>Puede requerir apoyo en<textarea id="contSupport" rows="4" placeholder="Situaciones o tareas donde se ha observado que necesita más acompañamiento."></textarea></label>
+            <label>Estrategias que han funcionado<textarea id="contStrategies" rows="4" placeholder="Acciones concretas que otros docentes pueden replicar."></textarea></label>
+            <label>Aspectos a seguir observando<textarea id="contWatch" rows="4" placeholder="Qué conviene observar durante el siguiente periodo."></textarea></label>
+            <label class="toggle-line publish-toggle"><input id="contApprove" type="checkbox"><span><strong>Publicar para docentes asignados</strong><small>Si está apagado, se guarda únicamente como borrador de Alex.</small></span></label>
+            <button class="primary-btn" id="saveContinuityBtn">GUARDAR INFORME</button>
+            <div id="continuityStatus" class="status"></div>
+          </div>
+        </section>
+
+        <aside class="panel teacher-preview-panel">
+          <div class="preview-browser-bar"><span></span><span></span><span></span><small>VISTA DEL PORTAL DOCENTE</small></div>
+          <div id="continuityPreview" class="teacher-report-preview-empty">
+            Selecciona un alumno para ver el informe visual.
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-families">
+      <div class="cideb-subnav">
+        <button data-cideb-open="cideb">Resumen</button>
+        <button data-cideb-open="students">Alumnos</button>
+        <button data-cideb-open="teachers">Docentes</button>
+        <button data-cideb-open="observations">Observaciones</button>
+        <button data-cideb-open="continuity">Informes visuales</button>
+        <button data-cideb-open="families">Familias</button>
+        <button data-cideb-open="cideb-security">Seguridad CIDEB</button>
+      </div>
+      <div class="panel"><span class="eyebrow">FAMILIAS</span><h2>Portal Familiar</h2><select id="familyPerson"></select><div class="admin-form-grid"><label>Nombre del padre/madre/tutor<input id="familyName"></label><label>Relación<input id="familyRelation" placeholder="Madre, padre, tutor..."></label><label>Correo<input id="familyEmail" type="email"></label><button class="primary-btn" id="createFamilyBtn">CREAR ACCESO FAMILIAR</button></div><div id="familyCreateResult" class="access-code-result" hidden></div><div id="familyAdminStatus" class="status"></div><div id="familyAccessList"></div><hr class="soft-rule"><h3>Información visible para la familia</h3><div class="form-stack"><label>Resumen<textarea id="familySummary"></textarea></label><label>Fortalezas<textarea id="familyStrengths"></textarea></label><label>Objetivos actuales<textarea id="familyGoals"></textarea></label><label>Recomendaciones para casa<textarea id="familyRecommendations"></textarea></label><button class="secondary-btn" id="saveFamilyProfileBtn">GUARDAR INFORMACIÓN FAMILIAR</button><div id="familyProfileStatus" class="status"></div></div></div>
+    </section>
+
+    <section class="admin-view" id="view-security">
+      <div class="panel"><span class="eyebrow">SEGURIDAD GENERAL</span><h2>Historial de accesos y acciones</h2><p class="muted">Aquí queda la trazabilidad general de NORTIA. La gestión específica de CIDEB ahora vive dentro de su propio espacio.</p><button class="secondary-btn" id="refreshAuditBtn">ACTUALIZAR</button><div id="auditList" class="admin-record-list"></div></div>
+    </section>
+
+    <section class="admin-view" id="view-cideb-security">
+      <div class="cideb-subnav">
+        <button data-cideb-open="cideb">Resumen</button>
+        <button data-cideb-open="students">Alumnos</button>
+        <button data-cideb-open="teachers">Docentes</button>
+        <button data-cideb-open="observations">Observaciones</button>
+        <button data-cideb-open="continuity">Informes visuales</button>
+        <button data-cideb-open="families">Familias</button>
+        <button data-cideb-open="cideb-security">Seguridad CIDEB</button>
+      </div>
+      <div class="panel institution-management"><div class="panel-head"><div><span class="eyebrow">CIDEB · SEGURIDAD INSTITUCIONAL</span><h2>Cierre de uso con CIDEB</h2><p class="muted">Úsalo si algún día NORTIA deja de utilizarse en ese contexto. Los procesos terapéuticos privados se protegen y se separan del contexto escolar.</p></div><button class="secondary-btn" id="refreshInstitutionPreviewBtn">ACTUALIZAR CONTEO</button></div>
+        <div id="institutionPreview" class="institution-preview">Cargando información...</div>
+        <div class="institution-actions"><article><span class="eyebrow">OPCIÓN SEGURA</span><h3>Cerrar accesos y archivar</h3><p>Desactiva accesos docentes, retira la continuidad visible y archiva los expedientes exclusivamente escolares. No borra el historial.</p><button class="secondary-btn" id="closeInstitutionBtn">CERRAR ACCESOS CIDEB</button></article>
+        <article class="danger-zone institution-danger"><span class="eyebrow">ELIMINACIÓN INSTITUCIONAL</span><h3>Eliminar datos escolares CIDEB</h3><p>Borra observaciones, asignaciones y continuidad escolar. Los expedientes exclusivamente escolares se eliminan por completo. Si existe terapia privada con Alex, ese expediente privado se conserva.</p><label>Para confirmar escribe:<code>CERRAR CIDEB Y ELIMINAR</code><input id="institutionDeleteConfirmation" autocomplete="off"></label><button class="danger-btn" id="deleteInstitutionBtn">ELIMINAR DATOS ESCOLARES CIDEB</button></article></div>
+        <div id="institutionStatus" class="status"></div>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-vocational">
+      <div class="panel">
+        <span class="eyebrow">MAPA VOCACIONAL</span>
+        <h2>Información del proceso</h2>
+        <p class="muted">
+          “Contexto permitido para IA” es el espacio donde El profesional decide
+          qué información adicional puede utilizar NORTIA Reflexión.
+        </p>
+
+        <select id="vocPerson"></select>
+
+        <div class="form-stack">
+          <label>Intereses<textarea id="vocInterests"></textarea></label>
+          <label>Fortalezas<textarea id="vocStrengths"></textarea></label>
+          <label>Valores<textarea id="vocValues"></textarea></label>
+          <label>Materias favoritas<textarea id="vocSubjects"></textarea></label>
+          <label>Estilo de trabajo<textarea id="vocWorkStyle"></textarea></label>
+          <label>Carreras consideradas<textarea id="vocCareers"></textarea></label>
+          <label>Preguntas abiertas<textarea id="vocQuestions"></textarea></label>
+          <label>Plan de orientación definido por el profesional<textarea id="vocPlan"></textarea></label>
+          <label class="ai-context-label">Contexto permitido para IA
+            <textarea id="vocAIContext" placeholder="Solo información que Alex autoriza que la IA conozca."></textarea>
+          </label>
+
+          <button class="primary-btn" id="saveVocBtn">GUARDAR MAPA</button>
+          <div id="vocStatus" class="status"></div>
+        </div>
+      </div>
+    </section>
+
+    
+    <section class="admin-view" id="view-notifications">
+      <div class="panel">
+        <div class="panel-head notification-panel-head">
+          <div>
+            <span class="eyebrow">CENTRO DE NOTIFICACIONES</span>
+            <h2>Actividad que requiere tu atención</h2>
+            <p class="muted">
+              Los correos se envían a <strong>alex_raymundo@hotmail.com</strong>.
+              El correo contiene solo el resumen necesario; la información sensible se revisa dentro de NORTIA.
+            </p>
+          </div>
+
+          <div class="notification-actions">
+            <button class="secondary-btn" id="testEmailBtn">PROBAR CORREO</button>
+            <button class="secondary-btn" id="markAllReadBtn">MARCAR TODO LEÍDO</button>
+          </div>
+        </div>
+
+        <div id="emailNotificationStatus" class="email-config-card">
+          Revisando configuración de correo...
+        </div>
+
+        <div id="notificationActionStatus" class="status"></div>
+        <div id="notificationsList" class="notifications-list"></div>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-ai">
+      <div class="panel ai-panel">
+        <div class="panel-head ai-head">
+          <div>
+            <span class="eyebrow">NORTIA REFLEXIÓN</span>
+            <h2>Asistente interno de orientación</h2>
+            <p class="muted">
+              Prueba respuestas antes de habilitar esta herramienta para usuarios.
+              Las notas privadas del profesional no se incluyen en el contexto.
+            </p>
+          </div>
+
+          <button class="secondary-btn" id="testAIButton">
+            ⚡ PROBAR CONEXIÓN IA
+          </button>
+        </div>
+
+        <div id="aiHealth" class="ai-health"></div>
+
+        <label>
+          Persona / modo de prueba
+          <select id="aiPerson">
+            <option value="__demo__">Prueba general sin persona</option>
+          </select>
+        </label>
+
+        <div class="prompt-examples">
+          <button class="example-btn" data-fill="Ayúdame a comparar medicina e ingeniería según mis intereses.">Comparar opciones</button>
+          <button class="example-btn" data-fill="No sé qué carrera elegir porque me gustan varias materias.">Duda vocacional</button>
+          <button class="example-btn" data-fill="Ayúdame a organizar mis ideas antes de hablar con mis papás sobre mi carrera.">Preparar conversación</button>
+        </div>
+
+        <textarea id="aiMessage" rows="6" placeholder="Escribe una situación concreta..."></textarea>
+
+        <button class="primary-btn" id="aiSendBtn">⚡ GENERAR REFLEXIÓN</button>
+
+        <div id="aiReply" class="ai-reply"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="modal" id="personModal" hidden>
+  <div class="modal-backdrop" data-close-person></div>
+  <div class="modal-card">
+    <button class="modal-close" type="button" data-close-person>×</button>
+    <span class="eyebrow">NUEVA PERSONA</span>
+    <h2>Crear ficha</h2>
+
+    <form id="personForm">
+      <label>Nombre completo<input name="full_name" required></label>
+
+      <div class="two-cols">
+        <label>Edad<input name="age" type="number"></label>
+        <label>Teléfono<input name="phone"></label>
+      </div>
+
+      <label>Correo<input name="email" type="email"></label>
+
+      <div class="guardian-box">
+        <p>Datos de tutor, si aplica.</p>
+        <label>Nombre del tutor<input name="guardian_name"></label>
+        <div class="two-cols">
+          <label>Teléfono tutor<input name="guardian_phone"></label>
+          <label>Correo tutor<input name="guardian_email" type="email"></label>
+        </div>
+      </div>
+
+      <button class="primary-btn full" type="submit">CREAR FICHA</button>
+      <div id="personStatus" class="status"></div>
+    </form>
+  </div>
+</div>
+
+
+<div class="modal" id="cidebStudentModal" hidden>
+  <div class="modal-backdrop" data-close-cideb-student></div>
+  <div class="modal-card clean-modal-card">
+    <button class="modal-close" type="button" data-close-cideb-student>×</button>
+    <span class="eyebrow">CIDEB · NUEVO ALUMNO</span>
+    <h2>Crear ficha escolar</h2>
+    <form id="cidebStudentForm" class="form-stack">
+      <div class="two-cols"><label>Nombre completo<input name="full_name" required></label><label>Matrícula / ID<input name="student_number" required></label></div>
+      <div class="three-cols"><label>Grado<input name="grade_level"></label><label>Grupo<input name="group_name"></label><label>Ciclo escolar<input name="school_year" placeholder="2026–2027" required></label></div>
+      <details class="optional-fields"><summary>Datos de contacto opcionales</summary><div class="two-cols"><label>Edad<input name="age" type="number"></label><label>Teléfono<input name="phone"></label></div><label>Correo<input name="email" type="email"></label></details>
+      <button class="primary-btn full" type="submit">CREAR ALUMNO</button>
+      <div id="cidebStudentFormStatus" class="status"></div>
+    </form>
+  </div>
+</div>
+
+<div class="modal" id="cidebImportModal" hidden>
+  <div class="modal-backdrop" data-close-cideb-import></div>
+  <div class="modal-card wide-modal-card">
+    <button class="modal-close" type="button" data-close-cideb-import>×</button>
+    <span class="eyebrow">CIDEB · CARGA MASIVA</span>
+    <h2>Importar alumnos desde CSV</h2>
+    <p class="muted">Columnas esperadas: <b>matricula, nombre, edad, grado, grupo, ciclo, correo, telefono</b>. Matrícula, nombre y ciclo son obligatorios.</p>
+    <label class="file-drop">Seleccionar archivo CSV<input id="cidebCsvFile" type="file" accept=".csv,text/csv"></label>
+    <div id="cidebImportPreview" class="import-preview"></div>
+    <button class="primary-btn full" id="runCidebImportBtn" disabled>IMPORTAR FILAS VÁLIDAS</button>
+    <div id="cidebImportStatus" class="status"></div>
+  </div>
+</div>
+
+<div class="modal" id="cidebCycleModal" hidden>
+  <div class="modal-backdrop" data-close-cideb-cycle></div>
+  <div class="modal-card clean-modal-card">
+    <button class="modal-close" type="button" data-close-cideb-cycle>×</button>
+    <span class="eyebrow">CIDEB · CICLO ESCOLAR</span>
+    <h2>Iniciar nuevo ciclo</h2>
+    <p class="muted">Se conserva el historial. Las asignaciones docentes del ciclo anterior se cierran y grado/grupo quedan marcados para revisión; NORTIA no intenta adivinar la promoción del alumno.</p>
+    <div class="two-cols"><label>Ciclo actual<input id="cycleFrom" placeholder="2026–2027"></label><label>Nuevo ciclo<input id="cycleTo" placeholder="2027–2028"></label></div>
+    <button class="primary-btn full" id="advanceCycleBtn">CREAR NUEVO CICLO</button>
+    <div id="cycleStatus" class="status"></div>
+  </div>
+</div>
+
+<script src="/admin.js"></script>
+</body>
+</html>
