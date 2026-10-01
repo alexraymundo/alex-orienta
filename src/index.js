@@ -1,0 +1,2314 @@
+
+const encoder = new TextEncoder();
+
+function json(data, status = 200, headers = {}) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8", ...headers }
+  });
+}
+
+function nowISO() {
+  return new Date().toISOString();
+}
+
+function makeId(prefix) {
+  return `${prefix}_${crypto.randomUUID()}`;
+}
+
+function safeText(value, max = 4000) {
+  return String(value ?? "").trim().slice(0, max);
+}
+
+async function parseBody(req) {
+  try { return await req.json(); } catch { return {}; }
+}
+
+async function hmac(secret, value) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(value));
+  return btoa(String.fromCharCode(...new Uint8Array(signature)))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+async function createSessionToken(env) {
+  const expiresAt = String(Date.now() + 8 * 60 * 60 * 1000);
+  return `${expiresAt}.${await hmac(env.SESSION_SECRET, expiresAt)}`;
+}
+
+async function hasValidAdminSession(req, env) {
+  const cookie = req.headers.get("cookie") || "";
+  const match = cookie.match(/(?:^|;\s*)alex_orienta_session=([^;]+)/);
+  if (!match) return false;
+  const [expiresAt, signature] = match[1].split(".");
+  if (!expiresAt || !signature || Number(expiresAt) <= Date.now()) return false;
+  const expected = await hmac(env.SESSION_SECRET, expiresAt);
+  return signature === expected;
+}
+
+async function requireAdmin(req, env) {
+  const ok = await hasValidAdminSession(req, env);
+  return ok ? null : json({ error: "No autorizado" }, 401);
+}
+
+function highRiskLanguage(text) {
+  const value = String(text || "").toLowerCase();
+  return [
+    "me quiero matar", "quiero morir", "no quiero vivir",
+    "hacerme daño", "lastimarme", "matarme", "suicid", "autoles"
+  ].some(p => value.includes(p));
+}
+
+function extractAIText(result) {
+  if (!result) return "";
+  if (typeof result === "string") return result;
+  if (typeof result.response === "string") return result.response;
+  if (typeof result.result === "string") return result.result;
+  if (result.result && typeof result.result.response === "string") return result.result.response;
+  if (Array.isArray(result.choices) && result.choices[0]?.message?.content) {
+    const content = result.choices[0].message.content;
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+      return content.map(x => x?.text || x?.content || "").join("\n").trim();
+    }
+  }
+  if (Array.isArray(result.output_text)) return result.output_text.join("\n").trim();
+  return "";
+}
+
+
+async function sha256(value) {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    encoder.encode(String(value))
+  );
+  return [...new Uint8Array(digest)]
+    .map(byte => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+
+async function ensureSecurityTables(env) {
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS security_login_attempts (
+      attempt_key TEXT PRIMARY KEY,
+      scope TEXT NOT NULL,
+      fail_count INTEGER NOT NULL DEFAULT 0,
+      first_failed_at TEXT NOT NULL,
+      blocked_until TEXT,
+      updated_at TEXT NOT NULL
+    )
+  `).run();
+}
+
+async function loginAttemptKey(req, scope) {
+  const ip = req.headers.get("CF-Connecting-IP") || "unknown";
+  const ua = safeText(req.headers.get("user-agent") || "unknown", 180);
+  return sha256(`${scope}|${ip}|${ua}`);
+}
+
+async function loginRateState(req, env, scope) {
+  await ensureSecurityTables(env);
+  const key = await loginAttemptKey(req, scope);
+  const row = await env.DB.prepare(`
+    SELECT fail_count, first_failed_at, blocked_until, updated_at
+    FROM security_login_attempts
+    WHERE attempt_key=?
+  `).bind(key).first();
+
+  if (!row) return { allowed: true, key, remaining: 7 };
+
+  const now = Date.now();
+  const blockedUntil = row.blocked_until ? Date.parse(row.blocked_until) : 0;
+  if (blockedUntil && blockedUntil > now) {
+    return {
+      allowed: false,
+      key,
+      retry_after_seconds: Math.max(1, Math.ceil((blockedUntil - now) / 1000))
+    };
+  }
+
+  const updatedAt = Date.parse(row.updated_at || row.first_failed_at || 0);
+  if (!updatedAt || now - updatedAt > 15 * 60 * 1000) {
+    await env.DB.prepare(`DELETE FROM security_login_attempts WHERE attempt_key=?`).bind(key).run();
+    return { allowed: true, key, remaining: 7 };
+  }
+
+  return { allowed: true, key, remaining: Math.max(0, 7 - Number(row.fail_count || 0)) };
+}
+
+async function recordLoginFailure(req, env, scope) {
+  await ensureSecurityTables(env);
+  const key = await loginAttemptKey(req, scope);
+  const now = nowISO();
+  const existing = await env.DB.prepare(`
+    SELECT fail_count, updated_at
+    FROM security_login_attempts
+    WHERE attempt_key=?
+  `).bind(key).first();
+
+  let count = 1;
+  if (existing) {
+    const updatedAt = Date.parse(existing.updated_at || 0);
+    count = (updatedAt && Date.now() - updatedAt <= 15 * 60 * 1000)
+      ? Number(existing.fail_count || 0) + 1
+      : 1;
+  }
+
+  const blockedUntil = count >= 7
+    ? new Date(Date.now() + 15 * 60 * 1000).toISOString()
+    : null;
+
+  await env.DB.prepare(`
+    INSERT INTO security_login_attempts (
+      attempt_key, scope, fail_count, first_failed_at, blocked_until, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(attempt_key) DO UPDATE SET
+      scope=excluded.scope,
+      fail_count=excluded.fail_count,
+      blocked_until=excluded.blocked_until,
+      updated_at=excluded.updated_at
+  `).bind(key, scope, count, now, blockedUntil, now).run();
+
+  return { count, blocked_until: blockedUntil };
+}
+
+async function clearLoginFailures(req, env, scope) {
+  await ensureSecurityTables(env);
+  const key = await loginAttemptKey(req, scope);
+  await env.DB.prepare(`DELETE FROM security_login_attempts WHERE attempt_key=?`).bind(key).run();
+}
+
+async function enforceLoginRateLimit(req, env, scope) {
+  const state = await loginRateState(req, env, scope);
+  if (state.allowed) return null;
+  return json(
+    { error: "Demasiados intentos. Espera unos minutos antes de volver a intentar." },
+    429,
+    { "retry-after": String(state.retry_after_seconds || 900) }
+  );
+}
+
+function isCrossSiteMutation(req, url) {
+  if (!new Set(["POST", "PUT", "PATCH", "DELETE"]).has(req.method)) return false;
+  const fetchSite = (req.headers.get("sec-fetch-site") || "").toLowerCase();
+  if (fetchSite === "cross-site") return true;
+  const origin = req.headers.get("origin");
+  if (origin && origin !== url.origin) return true;
+  return false;
+}
+
+function addSecurityHeaders(response, isApi = false) {
+  const headers = new Headers(response.headers);
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Referrer-Policy", "same-origin");
+  headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+  headers.set("X-Frame-Options", "DENY");
+  headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  headers.set(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+  );
+  if (isApi) headers.set("Cache-Control", "no-store");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
+function generateAccessCode() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+
+  let code = "";
+  for (const byte of bytes) {
+    code += alphabet[byte % alphabet.length];
+  }
+
+  return `NT-${code.slice(0, 4)}-${code.slice(4)}`;
+}
+
+async function createClientSession(env, personId) {
+  const expiresAt = String(Date.now() + 12 * 60 * 60 * 1000);
+  const payload = `${personId}.${expiresAt}`;
+  const signature = await hmac(env.SESSION_SECRET, payload);
+  return `${payload}.${signature}`;
+}
+
+async function getClientSession(req, env) {
+  const cookie = req.headers.get("cookie") || "";
+  const match = cookie.match(/(?:^|;\s*)alex_orienta_client=([^;]+)/);
+
+  if (!match) return null;
+
+  const parts = match[1].split(".");
+  if (parts.length !== 3) return null;
+
+  const [personId, expiresAt, signature] = parts;
+  if (!personId || !expiresAt || !signature) return null;
+  if (Number(expiresAt) <= Date.now()) return null;
+
+  const payload = `${personId}.${expiresAt}`;
+  const expected = await hmac(env.SESSION_SECRET, payload);
+
+  if (signature !== expected) return null;
+
+  return { personId, expiresAt: Number(expiresAt) };
+}
+
+async function requireClient(req, env) {
+  const session = await getClientSession(req, env);
+  return session
+    ? { session, response: null }
+    : { session: null, response: json({ error: "Acceso requerido" }, 401) };
+}
+
+function clientCookie(token) {
+  return `alex_orienta_client=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=43200`;
+}
+
+function clearClientCookie() {
+  return "alex_orienta_client=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0";
+}
+
+async function getClientVisibleData(env, personId) {
+  const person = await env.DB.prepare(`
+    SELECT id, full_name, age, email, phone, is_minor
+    FROM people
+    WHERE id=?
+  `).bind(personId).first();
+
+  if (!person) return null;
+
+  const access = await env.DB.prepare(`
+    SELECT active, consent_confirmed, ai_enabled, last_login_at
+    FROM client_access
+    WHERE person_id=?
+  `).bind(personId).first();
+
+  const vocational = await env.DB.prepare(`
+    SELECT
+      interests,
+      strengths,
+      values_text,
+      favorite_subjects,
+      work_style,
+      careers_considered,
+      open_questions
+    FROM vocational_profiles
+    WHERE person_id=?
+  `).bind(personId).first();
+
+  const { results: followups } = await env.DB.prepare(`
+    SELECT id, followup_date, title, shared_summary, agreements, next_steps
+    FROM followups
+    WHERE person_id=?
+      AND (
+        COALESCE(shared_summary, '') <> ''
+        OR COALESCE(agreements, '') <> ''
+        OR COALESCE(next_steps, '') <> ''
+      )
+    ORDER BY followup_date DESC, created_at DESC
+  `).bind(personId).all();
+
+  const { results: customFields } = await env.DB.prepare(`
+    SELECT id, field_name, field_value, visibility
+    FROM custom_fields
+    WHERE person_id=?
+      AND visibility IN ('shared','shared_ai')
+    ORDER BY created_at ASC
+  `).bind(personId).all();
+
+  const { results: exercises } = await env.DB.prepare(`
+    SELECT id, title, description, due_date, status
+    FROM exercises
+    WHERE person_id=? AND shared=1
+    ORDER BY
+      CASE status WHEN 'pending' THEN 0 ELSE 1 END,
+      COALESCE(due_date, '9999-12-31'),
+      created_at DESC
+  `).bind(personId).all();
+
+  const nextAppointment = await env.DB.prepare(`
+    SELECT preferred_date, preferred_time, service_type, status
+    FROM appointments
+    WHERE client_name = ?
+      AND status='confirmed'
+      AND preferred_date >= date('now')
+    ORDER BY preferred_date ASC, preferred_time ASC
+    LIMIT 1
+  `).bind(person.full_name).first();
+
+  const program = await getPersonProgram(env, personId);
+
+  return {
+    person,
+    access,
+    program,
+    vocational: vocational || {},
+    followups: followups || [],
+    custom_fields: customFields || [],
+    exercises: exercises || [],
+    next_appointment: nextAppointment || null
+  };
+}
+
+async function getAIContextForClient(env, personId) {
+  const person = await env.DB.prepare(`
+    SELECT full_name, age
+    FROM people
+    WHERE id=?
+  `).bind(personId).first();
+
+  const vocational = await env.DB.prepare(`
+    SELECT *
+    FROM vocational_profiles
+    WHERE person_id=?
+  `).bind(personId).first();
+
+  const { results: fields } = await env.DB.prepare(`
+    SELECT field_name, field_value
+    FROM custom_fields
+    WHERE person_id=?
+      AND visibility IN ('ai','shared_ai')
+    ORDER BY created_at ASC
+  `).bind(personId).all();
+
+  const { results: followups } = await env.DB.prepare(`
+    SELECT followup_date, title, shared_summary, agreements, next_steps
+    FROM followups
+    WHERE person_id=?
+      AND (
+        COALESCE(shared_summary, '') <> ''
+        OR COALESCE(agreements, '') <> ''
+        OR COALESCE(next_steps, '') <> ''
+      )
+    ORDER BY followup_date DESC
+    LIMIT 5
+  `).bind(personId).all();
+
+  const { results: recentMessages } = await env.DB.prepare(`
+    SELECT role, content
+    FROM client_ai_messages
+    WHERE person_id=? AND risk_flag=0
+    ORDER BY created_at DESC
+    LIMIT 8
+  `).bind(personId).all();
+
+  return {
+    person,
+    vocational: vocational || {},
+    fields: fields || [],
+    followups: followups || [],
+    recent_messages: (recentMessages || []).reverse()
+  };
+}
+
+function nortiaLocalDate() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Monterrey", year: "numeric", month: "2-digit", day: "2-digit"
+  }).formatToParts(new Date());
+  const map = Object.fromEntries(parts.map(x => [x.type, x.value]));
+  return `${map.year}-${map.month}-${map.day}`;
+}
+
+
+async function ensureAIUsageTable(env) {
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS ai_daily_usage (
+      person_id TEXT NOT NULL,
+      usage_date TEXT NOT NULL,
+      used_count INTEGER NOT NULL DEFAULT 0,
+      extra_messages INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY(person_id, usage_date),
+      FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE
+    )
+  `).run();
+
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_ai_daily_usage_date
+    ON ai_daily_usage(usage_date)
+  `).run();
+}
+
+async function getAIUsage(env, personId) {
+  await ensureAIUsageTable(env);
+  const usageDate = nortiaLocalDate();
+  const row = await env.DB.prepare(`SELECT used_count, extra_messages FROM ai_daily_usage WHERE person_id=? AND usage_date=?`).bind(personId, usageDate).first();
+  const used = Number(row?.used_count || 0);
+  const extra = Number(row?.extra_messages || 0);
+  const limit = 15 + extra;
+  return { usage_date: usageDate, used, extra, limit, remaining: Math.max(0, limit-used) };
+}
+
+async function incrementAIUsage(env, personId) {
+  await ensureAIUsageTable(env);
+  const usageDate=nortiaLocalDate(), now=nowISO();
+  await env.DB.prepare(`INSERT INTO ai_daily_usage (person_id,usage_date,used_count,extra_messages,updated_at) VALUES (?,?,1,0,?) ON CONFLICT(person_id,usage_date) DO UPDATE SET used_count=ai_daily_usage.used_count+1, updated_at=excluded.updated_at`).bind(personId,usageDate,now).run();
+  return getAIUsage(env,personId);
+}
+
+
+const ALEX_NOTIFICATION_EMAIL = "alex_raymundo@hotmail.com";
+
+function escapeEmailHTML(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+async function ensureNotificationsTable(env) {
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      person_id TEXT,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      priority TEXT NOT NULL DEFAULT 'normal',
+      is_read INTEGER NOT NULL DEFAULT 0,
+      email_status TEXT NOT NULL DEFAULT 'pending',
+      email_error TEXT,
+      created_at TEXT NOT NULL,
+      read_at TEXT,
+      FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE SET NULL
+    )
+  `).run();
+
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_notifications_created
+    ON notifications(created_at DESC)
+  `).run();
+
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_notifications_unread
+    ON notifications(is_read, created_at DESC)
+  `).run();
+}
+
+async function sendAlexEmail(env, subject, text, html = "") {
+  if (!env.RESEND_API_KEY) {
+    return {
+      ok: false,
+      status: "not_configured",
+      error: "Falta configurar RESEND_API_KEY en Cloudflare Secrets."
+    };
+  }
+
+  const from =
+    safeText(env.RESEND_FROM_EMAIL, 240) ||
+    "NORTIA <onboarding@resend.dev>";
+
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "authorization": `Bearer ${env.RESEND_API_KEY}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        from,
+        to: [ALEX_NOTIFICATION_EMAIL],
+        subject: safeText(subject, 250),
+        text: safeText(text, 12000),
+        html: html || undefined
+      })
+    });
+
+    const raw = await response.text();
+    let data = {};
+    try {
+      data = raw ? JSON.parse(raw) : {};
+    } catch {}
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: "error",
+        error: safeText(
+          data?.message ||
+          data?.error?.message ||
+          raw ||
+          `HTTP ${response.status}`,
+          800
+        )
+      };
+    }
+
+    return {
+      ok: true,
+      status: "sent",
+      id: data?.id || null
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: "error",
+      error: safeText(error?.message || error, 800)
+    };
+  }
+}
+
+async function createNotification(env, {
+  type,
+  personId = null,
+  title,
+  message,
+  priority = "normal",
+  emailSubject = "",
+  emailText = "",
+  emailHTML = ""
+}) {
+  await ensureNotificationsTable(env);
+
+  const id = makeId("notify");
+  const now = nowISO();
+
+  await env.DB.prepare(`
+    INSERT INTO notifications (
+      id, type, person_id, title, message, priority,
+      is_read, email_status, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, 0, 'pending', ?)
+  `).bind(
+    id,
+    safeText(type, 60),
+    personId || null,
+    safeText(title, 220),
+    safeText(message, 3000),
+    safeText(priority, 30) || "normal",
+    now
+  ).run();
+
+  const emailResult = await sendAlexEmail(
+    env,
+    emailSubject || `NORTIA · ${title}`,
+    emailText || message,
+    emailHTML
+  );
+
+  await env.DB.prepare(`
+    UPDATE notifications
+    SET email_status=?, email_error=?
+    WHERE id=?
+  `).bind(
+    emailResult.status,
+    emailResult.error || null,
+    id
+  ).run();
+
+  return {
+    id,
+    email: emailResult
+  };
+}
+
+
+const TEACHER_AGREEMENT_VERSION = "1.0";
+const FAMILY_AGREEMENT_VERSION = "1.0";
+
+async function ensureSchoolModuleTables(env) {
+  const statements = [
+    `CREATE TABLE IF NOT EXISTS person_programs (person_id TEXT PRIMARY KEY, therapy_with_alex INTEGER NOT NULL DEFAULT 0, school_followup INTEGER NOT NULL DEFAULT 0, school_name TEXT, grade_level TEXT, school_year TEXT, updated_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
+    `CREATE TABLE IF NOT EXISTS teachers (id TEXT PRIMARY KEY, full_name TEXT NOT NULL, email TEXT, school_name TEXT, access_hash TEXT NOT NULL, access_hint TEXT, active INTEGER NOT NULL DEFAULT 1, agreement_version TEXT NOT NULL DEFAULT '1.0', agreement_accepted_at TEXT, agreement_signed_name TEXT, last_login_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS teacher_assignments (teacher_id TEXT NOT NULL, person_id TEXT NOT NULL, school_year TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, PRIMARY KEY(teacher_id, person_id, school_year), FOREIGN KEY(teacher_id) REFERENCES teachers(id) ON DELETE CASCADE, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
+    `CREATE TABLE IF NOT EXISTS teacher_observations (id TEXT PRIMARY KEY, teacher_id TEXT NOT NULL, person_id TEXT NOT NULL, observation_date TEXT NOT NULL, subject TEXT, context TEXT, attention_support INTEGER, instructions_support INTEGER, organization_support INTEGER, peer_support INTEGER, frustration_support INTEGER, transitions_support INTEGER, autonomy_support INTEGER, help_seeking_support INTEGER, description TEXT NOT NULL, antecedent TEXT, strategy_used TEXT, result_text TEXT, additional_comments TEXT, status TEXT NOT NULL DEFAULT 'submitted', professional_comment TEXT, reviewed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(teacher_id) REFERENCES teachers(id) ON DELETE CASCADE, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
+    `CREATE TABLE IF NOT EXISTS school_continuity (person_id TEXT PRIMARY KEY, general_description TEXT, strengths TEXT, support_needs TEXT, strategies TEXT, watch_items TEXT, approved_at TEXT, updated_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
+    `CREATE TABLE IF NOT EXISTS guardians (id TEXT PRIMARY KEY, person_id TEXT NOT NULL, full_name TEXT NOT NULL, relationship TEXT, email TEXT, access_hash TEXT NOT NULL, access_hint TEXT, active INTEGER NOT NULL DEFAULT 1, agreement_version TEXT NOT NULL DEFAULT '1.0', agreement_accepted_at TEXT, agreement_signed_name TEXT, last_login_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
+    `CREATE TABLE IF NOT EXISTS family_profiles (person_id TEXT PRIMARY KEY, summary TEXT, strengths TEXT, current_goals TEXT, recommendations_home TEXT, updated_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
+    `CREATE TABLE IF NOT EXISTS family_observations (id TEXT PRIMARY KEY, guardian_id TEXT NOT NULL, person_id TEXT NOT NULL, observation_date TEXT NOT NULL, context TEXT, observation_text TEXT NOT NULL, what_helped TEXT, questions TEXT, status TEXT NOT NULL DEFAULT 'submitted', professional_comment TEXT, reviewed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(guardian_id) REFERENCES guardians(id) ON DELETE CASCADE, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
+    `CREATE TABLE IF NOT EXISTS audit_log (id TEXT PRIMARY KEY, actor_role TEXT NOT NULL, actor_id TEXT, action TEXT NOT NULL, person_id TEXT, detail TEXT, created_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE SET NULL)`
+  ];
+  for (const sql of statements) await env.DB.prepare(sql).run();
+}
+
+
+async function ensureDataManagementTables(env) {
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS person_data_context (person_id TEXT PRIMARY KEY, context_type TEXT NOT NULL DEFAULT 'private', institution_name TEXT, archive_reason TEXT, archived_at TEXT, updated_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_person_data_context_type ON person_data_context(context_type, institution_name)`).run();
+}
+async function getPersonDataContext(env, personId) {
+  await ensureDataManagementTables(env);
+  const row=await env.DB.prepare(`SELECT * FROM person_data_context WHERE person_id=?`).bind(personId).first();
+  return row||{person_id:personId,context_type:'private',institution_name:'',archive_reason:'',archived_at:null};
+}
+function normalizeConfirmation(value){return safeText(value,300).replace(/\s+/g,' ').trim().toLocaleUpperCase('es-MX');}
+async function getInstitutionPeople(env,institution='CIDEB'){
+  await ensureSchoolModuleTables(env); await ensureDataManagementTables(env);
+  const needle=`%${String(institution||'CIDEB').toLowerCase()}%`;
+  const {results}=await env.DB.prepare(`SELECT p.id,p.full_name,p.status,COALESCE(pp.therapy_with_alex,0) AS therapy_with_alex,COALESCE(pp.school_followup,0) AS school_followup,COALESCE(pp.school_name,'') AS school_name,COALESCE(dc.context_type,'private') AS context_type,COALESCE(dc.institution_name,'') AS institution_name FROM people p LEFT JOIN person_programs pp ON pp.person_id=p.id LEFT JOIN person_data_context dc ON dc.person_id=p.id WHERE LOWER(COALESCE(pp.school_name,'')) LIKE ? OR LOWER(COALESCE(dc.institution_name,'')) LIKE ? OR COALESCE(dc.context_type,'')='cideb' ORDER BY p.full_name`).bind(needle,needle).all();
+  return results||[];
+}
+async function institutionPreview(env,institution='CIDEB'){
+  const people=await getInstitutionPeople(env,institution),ids=people.map(x=>x.id),needle=`%${String(institution).toLowerCase()}%`;
+  const tr=await env.DB.prepare(`SELECT COUNT(*) AS count FROM teachers WHERE LOWER(COALESCE(school_name,'')) LIKE ? AND active=1`).bind(needle).first();
+  if(!ids.length)return{institution,people:0,school_only:0,private_therapy_preserved:0,active_teachers:Number(tr?.count||0),teacher_assignments:0,teacher_observations:0,continuity_records:0,family_accesses:0};
+  const marks=ids.map(()=>'?').join(',');
+  const [a,o,c,f]=await Promise.all([
+    env.DB.prepare(`SELECT COUNT(*) AS count FROM teacher_assignments WHERE person_id IN (${marks}) AND active=1`).bind(...ids).first(),
+    env.DB.prepare(`SELECT COUNT(*) AS count FROM teacher_observations WHERE person_id IN (${marks})`).bind(...ids).first(),
+    env.DB.prepare(`SELECT COUNT(*) AS count FROM school_continuity WHERE person_id IN (${marks})`).bind(...ids).first(),
+    env.DB.prepare(`SELECT COUNT(*) AS count FROM guardians WHERE person_id IN (${marks}) AND active=1`).bind(...ids).first()
+  ]);
+  return{institution,people:people.length,school_only:people.filter(x=>!Number(x.therapy_with_alex)).length,private_therapy_preserved:people.filter(x=>Number(x.therapy_with_alex)).length,active_teachers:Number(tr?.count||0),teacher_assignments:Number(a?.count||0),teacher_observations:Number(o?.count||0),continuity_records:Number(c?.count||0),family_accesses:Number(f?.count||0)};
+}
+function generateRoleAccessCode(prefix) {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  let code = "";
+  for (const byte of bytes) code += alphabet[byte % alphabet.length];
+  return `NT-${prefix}-${code.slice(0,4)}-${code.slice(4)}`;
+}
+
+async function createSignedRoleSession(env, role, actorId) {
+  const expiresAt = String(Date.now() + 12 * 60 * 60 * 1000);
+  const payload = `${role}.${actorId}.${expiresAt}`;
+  const signature = await hmac(env.SESSION_SECRET, payload);
+  return `${actorId}.${expiresAt}.${signature}`;
+}
+
+async function getSignedRoleSession(req, env, role) {
+  const cookieName = role === "teacher" ? "nortia_teacher" : "nortia_family";
+  const cookie = req.headers.get("cookie") || "";
+  const match = cookie.match(new RegExp(`(?:^|;\\s*)${cookieName}=([^;]+)`));
+  if (!match) return null;
+  const [actorId, expiresAt, signature] = match[1].split(".");
+  if (!actorId || !expiresAt || !signature || Number(expiresAt) <= Date.now()) return null;
+  const expected = await hmac(env.SESSION_SECRET, `${role}.${actorId}.${expiresAt}`);
+  if (signature !== expected) return null;
+  return { actorId, expiresAt: Number(expiresAt) };
+}
+
+function roleCookie(role, token) {
+  const name = role === "teacher" ? "nortia_teacher" : "nortia_family";
+  return `${name}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=43200`;
+}
+
+function clearRoleCookie(role) {
+  const name = role === "teacher" ? "nortia_teacher" : "nortia_family";
+  return `${name}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`;
+}
+
+async function logAudit(env, actorRole, actorId, action, personId = null, detail = "") {
+  await ensureSchoolModuleTables(env);
+  await env.DB.prepare(`INSERT INTO audit_log (id, actor_role, actor_id, action, person_id, detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .bind(makeId("audit"), actorRole, actorId || null, action, personId || null, safeText(detail, 1000), nowISO()).run();
+}
+
+async function getPersonProgram(env, personId) {
+  await ensureSchoolModuleTables(env);
+  const row = await env.DB.prepare(`SELECT * FROM person_programs WHERE person_id=?`).bind(personId).first();
+  return row || { person_id: personId, therapy_with_alex: 0, school_followup: 0, school_name: "", grade_level: "", school_year: "" };
+}
+
+async function assertTherapyAI(env, personId) {
+  const program = await getPersonProgram(env, personId);
+  return !!program.therapy_with_alex;
+}
+
+async function teacherAssignment(env, teacherId, personId) {
+  return env.DB.prepare(`SELECT ta.* FROM teacher_assignments ta JOIN people p ON p.id=ta.person_id LEFT JOIN person_programs pp ON pp.person_id=p.id WHERE ta.teacher_id=? AND ta.person_id=? AND ta.active=1 AND p.status='active' AND COALESCE(pp.school_followup,0)=1 ORDER BY ta.created_at DESC LIMIT 1`).bind(teacherId, personId).first();
+}
+
+async function getSchoolSnapshot(env, personId, reviewedOnly = true) {
+  await ensureSchoolModuleTables(env);
+  const statusClause = reviewedOnly ? "AND status='reviewed'" : "";
+  const stats = await env.DB.prepare(`
+    SELECT COUNT(*) AS observation_count,
+      AVG(attention_support) AS attention,
+      AVG(instructions_support) AS instructions,
+      AVG(organization_support) AS organization,
+      AVG(peer_support) AS peers,
+      AVG(frustration_support) AS frustration,
+      AVG(transitions_support) AS transitions,
+      AVG(autonomy_support) AS autonomy,
+      AVG(help_seeking_support) AS help_seeking
+    FROM teacher_observations
+    WHERE person_id=? ${statusClause}
+  `).bind(personId).first();
+  const { results: contexts } = await env.DB.prepare(`
+    SELECT COALESCE(NULLIF(context,''),'Sin contexto') AS context, COUNT(*) AS count
+    FROM teacher_observations
+    WHERE person_id=? ${statusClause}
+    GROUP BY COALESCE(NULLIF(context,''),'Sin contexto')
+    ORDER BY count DESC, context ASC
+    LIMIT 8
+  `).bind(personId).all();
+  const clean = {};
+  for (const key of ["attention","instructions","organization","peers","frustration","transitions","autonomy","help_seeking"]) {
+    clean[key] = stats?.[key] == null ? null : Math.round(Number(stats[key]) * 10) / 10;
+  }
+  return { observation_count: Number(stats?.observation_count || 0), support: clean, contexts: contexts || [] };
+}
+
+async function api(req, env, url) {
+  const path = url.pathname;
+
+  if (path === "/api/admin/login" && req.method === "POST") {
+    const limited = await enforceLoginRateLimit(req, env, "admin");
+    if (limited) return limited;
+
+    const body = await parseBody(req);
+    if (!env.ADMIN_PASSWORD || !env.SESSION_SECRET) {
+      return json({ error: "La configuración de seguridad del administrador está incompleta." }, 500);
+    }
+    if (safeText(body.password, 200) !== env.ADMIN_PASSWORD) {
+      await recordLoginFailure(req, env, "admin");
+      return json({ error: "Credenciales incorrectas" }, 401);
+    }
+    await clearLoginFailures(req, env, "admin");
+    const token = await createSessionToken(env);
+    return json({ ok: true }, 200, {
+      "set-cookie": `alex_orienta_session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800`
+    });
+  }
+
+  if (path === "/api/admin/logout" && req.method === "POST") {
+    return json({ ok: true }, 200, {
+      "set-cookie": "alex_orienta_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0"
+    });
+  }
+
+  if (path === "/api/admin/session" && req.method === "GET") {
+    return json({ authenticated: await hasValidAdminSession(req, env) });
+  }
+
+
+  if (path === "/api/client/login" && req.method === "POST") {
+    const limited = await enforceLoginRateLimit(req, env, "client");
+    if (limited) return limited;
+
+    const b = await parseBody(req);
+    const code = safeText(b.code, 40).toUpperCase();
+
+    if (!code) {
+      return json({ error: "Escribe tu código de acceso." }, 400);
+    }
+
+    const hash = await sha256(code);
+
+    const access = await env.DB.prepare(`
+      SELECT ca.person_id, ca.active, p.full_name
+      FROM client_access ca
+      JOIN people p ON p.id=ca.person_id
+      WHERE ca.access_hash=? AND p.status='active'
+    `).bind(hash).first();
+
+    if (!access || !access.active) {
+      await recordLoginFailure(req, env, "client");
+      return json({ error: "Código de acceso inválido o desactivado." }, 401);
+    }
+
+    await clearLoginFailures(req, env, "client");
+    const token = await createClientSession(env, access.person_id);
+
+    await env.DB.prepare(`
+      UPDATE client_access
+      SET last_login_at=?, updated_at=?
+      WHERE person_id=?
+    `).bind(nowISO(), nowISO(), access.person_id).run();
+
+    return json({
+      ok: true,
+      name: access.full_name
+    }, 200, {
+      "set-cookie": clientCookie(token)
+    });
+  }
+
+  if (path === "/api/client/logout" && req.method === "POST") {
+    return json({ ok: true }, 200, {
+      "set-cookie": clearClientCookie()
+    });
+  }
+
+  if (path === "/api/client/session" && req.method === "GET") {
+    const session = await getClientSession(req, env);
+    return json({ authenticated: !!session });
+  }
+
+  if (path === "/api/client/me" && req.method === "GET") {
+    const check = await requireClient(req, env);
+    if (check.response) return check.response;
+
+    const data = await getClientVisibleData(env, check.session.personId);
+
+    if (!data || !data.access?.active) {
+      return json({ error: "Acceso no disponible." }, 403);
+    }
+
+    return json(data);
+  }
+
+  if (path === "/api/client/exercise-status" && req.method === "POST") {
+    const check = await requireClient(req, env);
+    if (check.response) return check.response;
+
+    const b = await parseBody(req);
+    const exerciseId = safeText(b.id, 120);
+    const status = b.status === "done" ? "done" : "pending";
+
+    const exercise = await env.DB.prepare(`
+      SELECT e.id, e.title, p.full_name
+      FROM exercises e
+      JOIN people p ON p.id=e.person_id
+      WHERE e.id=? AND e.person_id=? AND e.shared=1
+    `).bind(exerciseId, check.session.personId).first();
+
+    if (!exercise) {
+      return json({ error: "Ejercicio no encontrado." }, 404);
+    }
+
+    await env.DB.prepare(`
+      UPDATE exercises
+      SET status=?, updated_at=?
+      WHERE id=?
+    `).bind(status, nowISO(), exerciseId).run();
+
+    if (status === "done") {
+      await createNotification(env, {
+        type: "exercise_done",
+        personId: check.session.personId,
+        title: "Actividad completada",
+        message: `${exercise.full_name} completó: ${exercise.title}.`,
+        priority: "normal",
+        emailSubject: "NORTIA · Actividad completada",
+        emailText:
+          `${exercise.full_name} marcó una actividad como completada.\n\n` +
+          `Actividad: ${exercise.title}\n\n` +
+          `Puedes revisar su seguimiento desde el Panel Profesional.`
+      });
+    }
+
+    return json({ ok: true });
+  }
+
+  if (path === "/api/client/ai-usage" && req.method === "GET") {
+    const check=await requireClient(req,env); if(check.response) return check.response;
+    return json(await getAIUsage(env,check.session.personId));
+  }
+
+  if (path === "/api/client/ai" && req.method === "POST") {
+    const check = await requireClient(req, env);
+    if (check.response) return check.response;
+
+    const personId = check.session.personId;
+    if (!(await assertTherapyAI(env, personId))) return json({ error: "NORTIA Reflexión está disponible únicamente para procesos terapéuticos activos con Alex." }, 403);
+    const b = await parseBody(req);
+    const message = safeText(b.message, 4000);
+
+    if (!message) {
+      return json({ error: "Escribe un mensaje." }, 400);
+    }
+
+    const access = await env.DB.prepare(`
+      SELECT active, consent_confirmed, ai_enabled
+      FROM client_access
+      WHERE person_id=?
+    `).bind(personId).first();
+
+    if (!access?.active) {
+      return json({ error: "Acceso desactivado." }, 403);
+    }
+
+    if (!access.consent_confirmed) {
+      return json({
+        error: "NORTIA Reflexión todavía no está habilitada porque falta confirmar el consentimiento."
+      }, 403);
+    }
+
+    if (!access.ai_enabled) {
+      return json({
+        error: "Alex todavía no ha habilitado NORTIA Reflexión para este proceso."
+      }, 403);
+    }
+
+    if (!env.AI || typeof env.AI.run !== "function") {
+      return json({
+        error: "NORTIA Reflexión no está disponible en este momento."
+      }, 503);
+    }
+
+    const usageBefore = await getAIUsage(env, personId);
+    if (usageBefore.remaining <= 0) {
+      return json({
+        error: "Has utilizado tus reflexiones disponibles por hoy. Puedes continuar mañana o guardar esta pregunta para tu próxima sesión con Alex.",
+        usage: usageBefore
+      }, 429);
+    }
+
+    if (highRiskLanguage(message)) {
+      const reply =
+        "Lo que escribes puede indicar que necesitas apoyo humano inmediato. " +
+        "Este espacio no está diseñado para manejar una crisis. " +
+        "Si existe riesgo de hacerte daño o estás en peligro, busca ahora a un adulto de confianza, " +
+        "a Alex u otro profesional, o contacta los servicios de emergencia de tu localidad.";
+
+      const createdAt = nowISO();
+
+      await env.DB.batch([
+        env.DB.prepare(`
+          INSERT INTO client_ai_messages
+          (id, person_id, role, content, risk_flag, created_at)
+          VALUES (?, ?, 'user', ?, 1, ?)
+        `).bind(makeId("cmsg"), personId, message, createdAt),
+
+        env.DB.prepare(`
+          INSERT INTO client_ai_messages
+          (id, person_id, role, content, risk_flag, created_at)
+          VALUES (?, ?, 'assistant', ?, 1, ?)
+        `).bind(makeId("cmsg"), personId, reply, createdAt)
+      ]);
+
+      const riskPerson = await env.DB.prepare(`
+        SELECT full_name
+        FROM people
+        WHERE id=?
+      `).bind(personId).first();
+
+      await createNotification(env, {
+        type: "ai_risk",
+        personId,
+        title: "Alerta de seguimiento en NORTIA Reflexión",
+        message:
+          `${riskPerson?.full_name || "Una persona"} generó una alerta que requiere revisión humana.`,
+        priority: "critical",
+        emailSubject: "NORTIA · Alerta de seguimiento",
+        emailText:
+          `Se generó una alerta de seguimiento en NORTIA Reflexión.\n\n` +
+          `Persona: ${riskPerson?.full_name || "Sin nombre"}\n\n` +
+          `Por privacidad, el contenido de la conversación no se incluye en este correo.\n` +
+          `Ingresa al Panel Profesional para revisarla.`
+      });
+
+      return json({
+        ok: true,
+        risk_flag: true,
+        reply
+      });
+    }
+
+    const context = await getAIContextForClient(env, personId);
+
+    const fieldText = context.fields.length
+      ? context.fields.map(item =>
+          `${item.field_name}: ${item.field_value || "Sin dato"}`
+        ).join("\n")
+      : "Sin campos adicionales autorizados.";
+
+    const followupText = context.followups.length
+      ? context.followups.map(item =>
+          [
+            item.followup_date,
+            item.title || "",
+            item.shared_summary || "",
+            item.agreements ? `Acuerdos: ${item.agreements}` : "",
+            item.next_steps ? `Siguiente paso: ${item.next_steps}` : ""
+          ].filter(Boolean).join(" · ")
+        ).join("\n")
+      : "Sin seguimientos compartidos.";
+
+    const system = `
+Eres "NORTIA Reflexión", una herramienta complementaria dentro de NORTIA.
+
+OBJETIVO:
+Ayudar a la persona a ordenar ideas, explorar opciones, preparar conversaciones,
+reflexionar sobre intereses/valores y convertir inquietudes en próximos pasos.
+
+LÍMITES:
+- No eres terapeuta.
+- No diagnostiques.
+- No recomiendes medicamentos.
+- No sustituyas atención profesional.
+- No tomes decisiones vocacionales por la persona.
+- No digas que una carrera específica es definitivamente "la correcta".
+- No fomentes dependencia emocional hacia la IA.
+- No prometas resultados.
+
+FORMA:
+- Español natural.
+- Máximo 220 palabras salvo que una comparación necesite más.
+- Sé concreto, humano y útil.
+- Evita frases genéricas.
+- Cuando sea útil, usa 3 a 5 bullets.
+- Termina con una sola pregunta breve si ayuda a continuar.
+
+CONTEXTO AUTORIZADO POR ALEX:
+Nombre: ${context.person?.full_name || "Persona"}
+Edad: ${context.person?.age ?? "No indicada"}
+Intereses: ${context.vocational?.interests || "No registrados"}
+Fortalezas: ${context.vocational?.strengths || "No registradas"}
+Valores: ${context.vocational?.values_text || "No registrados"}
+Materias favoritas: ${context.vocational?.favorite_subjects || "No registradas"}
+Estilo de trabajo: ${context.vocational?.work_style || "No registrado"}
+Carreras consideradas: ${context.vocational?.careers_considered || "No registradas"}
+Preguntas abiertas: ${context.vocational?.open_questions || "No registradas"}
+Plan de orientación: ${context.vocational?.guidance_plan || "No registrado"}
+Contexto específico permitido para IA: ${context.vocational?.ai_context || "Ninguno"}
+
+CAMPOS ADICIONALES AUTORIZADOS:
+${fieldText}
+
+SEGUIMIENTOS COMPARTIDOS:
+${followupText}
+
+IMPORTANTE:
+Nunca tienes acceso a las notas privadas de Alex.
+`.trim();
+
+    const messages = [
+      { role: "system", content: system },
+      ...context.recent_messages.map(item => ({
+        role: item.role === "assistant" ? "assistant" : "user",
+        content: item.content
+      })),
+      { role: "user", content: message }
+    ];
+
+    const model = "@cf/meta/llama-3.1-8b-instruct-fast";
+
+    try {
+      const result = await env.AI.run(model, {
+        messages,
+        max_tokens: 320
+      });
+
+      const reply = extractAIText(result).trim();
+
+      if (!reply) {
+        return json({
+          error: "NORTIA Reflexión no pudo generar texto en este momento."
+        }, 502);
+      }
+
+      const createdAt = nowISO();
+
+      await env.DB.batch([
+        env.DB.prepare(`
+          INSERT INTO client_ai_messages
+          (id, person_id, role, content, risk_flag, created_at)
+          VALUES (?, ?, 'user', ?, 0, ?)
+        `).bind(makeId("cmsg"), personId, message, createdAt),
+
+        env.DB.prepare(`
+          INSERT INTO client_ai_messages
+          (id, person_id, role, content, risk_flag, created_at)
+          VALUES (?, ?, 'assistant', ?, 0, ?)
+        `).bind(makeId("cmsg"), personId, reply, createdAt)
+      ]);
+
+      const usage = await incrementAIUsage(env, personId);
+
+      if (usage.remaining === 0) {
+        const limitPerson = await env.DB.prepare(`
+          SELECT full_name
+          FROM people
+          WHERE id=?
+        `).bind(personId).first();
+
+        await createNotification(env, {
+          type: "ai_limit",
+          personId,
+          title: "Límite diario de NORTIA Reflexión",
+          message:
+            `${limitPerson?.full_name || "Una persona"} alcanzó su límite diario de ${usage.limit} mensajes.`,
+          priority: "low",
+          emailSubject: "NORTIA · Límite diario de Reflexión",
+          emailText:
+            `${limitPerson?.full_name || "Una persona"} alcanzó el límite diario de ` +
+            `${usage.limit} mensajes en NORTIA Reflexión.\n\n` +
+            `Si lo consideras necesario, puedes otorgarle mensajes adicionales desde su ficha.`
+        });
+      }
+
+      return json({
+        ok: true,
+        risk_flag: false,
+        reply,
+        usage
+      });
+    } catch (error) {
+      return json({
+        error: `NORTIA Reflexión: ${safeText(error?.message || error, 500)}`
+      }, 502);
+    }
+  }
+
+
+  if (path === "/api/teacher/login" && req.method === "POST") {
+    await ensureSchoolModuleTables(env);
+    const limited = await enforceLoginRateLimit(req, env, "teacher");
+    if (limited) return limited;
+
+    const b = await parseBody(req);
+    const code = safeText(b.code, 60).toUpperCase();
+    if (!code) return json({ error: "Escribe tu código de acceso." }, 400);
+    const hash = await sha256(code);
+    const teacher = await env.DB.prepare(`SELECT * FROM teachers WHERE access_hash=? AND active=1`).bind(hash).first();
+    if (!teacher) {
+      await recordLoginFailure(req, env, "teacher");
+      return json({ error: "Código docente inválido o desactivado." }, 401);
+    }
+    await clearLoginFailures(req, env, "teacher");
+    const token = await createSignedRoleSession(env, "teacher", teacher.id);
+    await env.DB.prepare(`UPDATE teachers SET last_login_at=?, updated_at=? WHERE id=?`).bind(nowISO(), nowISO(), teacher.id).run();
+    await logAudit(env, "teacher", teacher.id, "login", null, "Inicio de sesión docente");
+    return json({ ok: true, name: teacher.full_name }, 200, { "set-cookie": roleCookie("teacher", token) });
+  }
+
+  if (path === "/api/teacher/logout" && req.method === "POST") {
+    return json({ ok: true }, 200, { "set-cookie": clearRoleCookie("teacher") });
+  }
+
+  if (path === "/api/teacher/session" && req.method === "GET") {
+    return json({ authenticated: !!(await getSignedRoleSession(req, env, "teacher")) });
+  }
+
+  if (path === "/api/teacher/me" && req.method === "GET") {
+    await ensureSchoolModuleTables(env);
+    const session = await getSignedRoleSession(req, env, "teacher");
+    if (!session) return json({ error: "Acceso requerido" }, 401);
+    const teacher = await env.DB.prepare(`SELECT id,full_name,email,school_name,agreement_version,agreement_accepted_at,agreement_signed_name FROM teachers WHERE id=? AND active=1`).bind(session.actorId).first();
+    if (!teacher) return json({ error: "Acceso docente no disponible." }, 403);
+    return json({ teacher, agreement_required: !teacher.agreement_accepted_at || teacher.agreement_version !== TEACHER_AGREEMENT_VERSION, current_version: TEACHER_AGREEMENT_VERSION });
+  }
+
+  if (path === "/api/teacher/accept-agreement" && req.method === "POST") {
+    await ensureSchoolModuleTables(env);
+    const session = await getSignedRoleSession(req, env, "teacher");
+    if (!session) return json({ error: "Acceso requerido" }, 401);
+    const b = await parseBody(req);
+    const signed = safeText(b.signed_name, 160);
+    if (!b.accepted || signed.length < 3) return json({ error: "Escribe tu nombre completo y acepta el acuerdo." }, 400);
+    await env.DB.prepare(`UPDATE teachers SET agreement_version=?, agreement_accepted_at=?, agreement_signed_name=?, updated_at=? WHERE id=?`)
+      .bind(TEACHER_AGREEMENT_VERSION, nowISO(), signed, nowISO(), session.actorId).run();
+    await logAudit(env, "teacher", session.actorId, "accept_confidentiality", null, `Versión ${TEACHER_AGREEMENT_VERSION}`);
+    return json({ ok: true });
+  }
+
+  if (path === "/api/teacher/students" && req.method === "GET") {
+    await ensureSchoolModuleTables(env);
+    const session = await getSignedRoleSession(req, env, "teacher");
+    if (!session) return json({ error: "Acceso requerido" }, 401);
+    const teacher = await env.DB.prepare(`SELECT agreement_accepted_at,agreement_version FROM teachers WHERE id=? AND active=1`).bind(session.actorId).first();
+    if (!teacher?.agreement_accepted_at || teacher.agreement_version !== TEACHER_AGREEMENT_VERSION) return json({ error: "Primero acepta el acuerdo de confidencialidad." }, 403);
+    const { results } = await env.DB.prepare(`
+      SELECT p.id,p.full_name,p.age,pp.grade_level,pp.school_name,ta.school_year
+      FROM teacher_assignments ta JOIN people p ON p.id=ta.person_id
+      LEFT JOIN person_programs pp ON pp.person_id=p.id
+      WHERE ta.teacher_id=? AND ta.active=1
+        AND p.status='active'
+        AND COALESCE(pp.school_followup,0)=1
+      ORDER BY p.full_name
+    `).bind(session.actorId).all();
+    return json({ students: results || [] });
+  }
+
+  if (path.startsWith("/api/teacher/student/") && req.method === "GET") {
+    await ensureSchoolModuleTables(env);
+    const session = await getSignedRoleSession(req, env, "teacher");
+    if (!session) return json({ error: "Acceso requerido" }, 401);
+    const teacher = await env.DB.prepare(`SELECT agreement_accepted_at,agreement_version FROM teachers WHERE id=? AND active=1`).bind(session.actorId).first();
+    if (!teacher?.agreement_accepted_at || teacher.agreement_version !== TEACHER_AGREEMENT_VERSION) return json({ error: "Primero acepta el acuerdo de confidencialidad." }, 403);
+    const personId = path.split("/").pop();
+    if (!(await teacherAssignment(env, session.actorId, personId))) return json({ error: "No tienes acceso a este alumno." }, 403);
+    const person = await env.DB.prepare(`SELECT id,full_name,age FROM people WHERE id=?`).bind(personId).first();
+    const program = await getPersonProgram(env, personId);
+    const continuity = await env.DB.prepare(`SELECT general_description,strengths,support_needs,strategies,watch_items,approved_at FROM school_continuity WHERE person_id=? AND approved_at IS NOT NULL`).bind(personId).first();
+    const snapshot = await getSchoolSnapshot(env, personId, true);
+    const { results: ownObservations } = await env.DB.prepare(`SELECT id,observation_date,subject,context,description,status,professional_comment FROM teacher_observations WHERE teacher_id=? AND person_id=? ORDER BY observation_date DESC,created_at DESC LIMIT 20`).bind(session.actorId, personId).all();
+    await logAudit(env, "teacher", session.actorId, "view_student_continuity", personId, "Consulta de ficha de continuidad escolar");
+    return json({ person, program, continuity: continuity || {}, snapshot, own_observations: ownObservations || [] });
+  }
+
+  if (path === "/api/teacher/observation" && req.method === "POST") {
+    await ensureSchoolModuleTables(env);
+    const session = await getSignedRoleSession(req, env, "teacher");
+    if (!session) return json({ error: "Acceso requerido" }, 401);
+    const teacher = await env.DB.prepare(`SELECT full_name,agreement_accepted_at,agreement_version FROM teachers WHERE id=? AND active=1`).bind(session.actorId).first();
+    if (!teacher?.agreement_accepted_at || teacher.agreement_version !== TEACHER_AGREEMENT_VERSION) return json({ error: "Primero acepta el acuerdo de confidencialidad." }, 403);
+    const b = await parseBody(req);
+    const personId = safeText(b.person_id,120);
+    if (!(await teacherAssignment(env, session.actorId, personId))) return json({ error: "No tienes acceso a este alumno." }, 403);
+    const description = safeText(b.description,5000);
+    if (!description) return json({ error: "Describe qué observaste." },400);
+    const clamp = v => { const n=Number(v); return Number.isFinite(n) ? Math.max(0,Math.min(3,Math.round(n))) : null; };
+    const id=makeId("tobs"), now=nowISO();
+    await env.DB.prepare(`INSERT INTO teacher_observations (id,teacher_id,person_id,observation_date,subject,context,attention_support,instructions_support,organization_support,peer_support,frustration_support,transitions_support,autonomy_support,help_seeking_support,description,antecedent,strategy_used,result_text,additional_comments,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'submitted',?,?)`)
+      .bind(id,session.actorId,personId,safeText(b.observation_date,20)||nortiaLocalDate(),safeText(b.subject,120),safeText(b.context,120),clamp(b.attention_support),clamp(b.instructions_support),clamp(b.organization_support),clamp(b.peer_support),clamp(b.frustration_support),clamp(b.transitions_support),clamp(b.autonomy_support),clamp(b.help_seeking_support),description,safeText(b.antecedent,3000),safeText(b.strategy_used,3000),safeText(b.result_text,3000),safeText(b.additional_comments,3000),now,now).run();
+    const person = await env.DB.prepare(`SELECT full_name FROM people WHERE id=?`).bind(personId).first();
+    await logAudit(env,"teacher",session.actorId,"submit_observation",personId,"Registro docente enviado a revisión");
+    await createNotification(env,{type:"teacher_observation",personId,title:"Nueva observación docente",message:`${teacher.full_name} registró una observación de ${person?.full_name || "un alumno"}.`,priority:"normal",emailSubject:"NORTIA · Nueva observación docente",emailText:`${teacher.full_name} registró una nueva observación escolar para ${person?.full_name || "un alumno"}.\n\nIngresa al Panel Profesional para revisarla.`});
+    return json({ok:true,id});
+  }
+
+  if (path === "/api/family/login" && req.method === "POST") {
+    await ensureSchoolModuleTables(env);
+    const limited = await enforceLoginRateLimit(req, env, "family");
+    if (limited) return limited;
+
+    const b=await parseBody(req); const code=safeText(b.code,60).toUpperCase();
+    if(!code) return json({error:"Escribe tu código de acceso."},400);
+    const hash=await sha256(code);
+    const guardian=await env.DB.prepare(`SELECT g.* FROM guardians g JOIN people p ON p.id=g.person_id WHERE g.access_hash=? AND g.active=1 AND p.status='active'`).bind(hash).first();
+    if(!guardian) {
+      await recordLoginFailure(req, env, "family");
+      return json({error:"Código familiar inválido o desactivado."},401);
+    }
+    await clearLoginFailures(req, env, "family");
+    const token=await createSignedRoleSession(env,"family",guardian.id);
+    await env.DB.prepare(`UPDATE guardians SET last_login_at=?,updated_at=? WHERE id=?`).bind(nowISO(),nowISO(),guardian.id).run();
+    await logAudit(env,"family",guardian.id,"login",guardian.person_id,"Inicio de sesión familiar");
+    return json({ok:true,name:guardian.full_name},200,{"set-cookie":roleCookie("family",token)});
+  }
+
+  if (path === "/api/family/logout" && req.method === "POST") return json({ok:true},200,{"set-cookie":clearRoleCookie("family")});
+  if (path === "/api/family/session" && req.method === "GET") return json({authenticated:!!(await getSignedRoleSession(req,env,"family"))});
+
+  if (path === "/api/family/me" && req.method === "GET") {
+    await ensureSchoolModuleTables(env);
+    const session=await getSignedRoleSession(req,env,"family"); if(!session) return json({error:"Acceso requerido"},401);
+    const guardian=await env.DB.prepare(`SELECT id,person_id,full_name,relationship,email,agreement_version,agreement_accepted_at,agreement_signed_name FROM guardians WHERE id=? AND active=1`).bind(session.actorId).first();
+    if(!guardian) return json({error:"Acceso familiar no disponible."},403);
+    const person=await env.DB.prepare(`SELECT id,full_name,age FROM people WHERE id=? AND status='active'`).bind(guardian.person_id).first();
+    if(!person) return json({error:"Este expediente ya no está activo."},403);
+    return json({guardian,person,agreement_required:!guardian.agreement_accepted_at||guardian.agreement_version!==FAMILY_AGREEMENT_VERSION,current_version:FAMILY_AGREEMENT_VERSION});
+  }
+
+  if (path === "/api/family/accept-agreement" && req.method === "POST") {
+    await ensureSchoolModuleTables(env); const session=await getSignedRoleSession(req,env,"family"); if(!session) return json({error:"Acceso requerido"},401);
+    const b=await parseBody(req), signed=safeText(b.signed_name,160); if(!b.accepted||signed.length<3) return json({error:"Escribe tu nombre completo y acepta el aviso."},400);
+    const guardian=await env.DB.prepare(`SELECT person_id FROM guardians WHERE id=?`).bind(session.actorId).first();
+    await env.DB.prepare(`UPDATE guardians SET agreement_version=?,agreement_accepted_at=?,agreement_signed_name=?,updated_at=? WHERE id=?`).bind(FAMILY_AGREEMENT_VERSION,nowISO(),signed,nowISO(),session.actorId).run();
+    await logAudit(env,"family",session.actorId,"accept_family_privacy",guardian?.person_id||null,`Versión ${FAMILY_AGREEMENT_VERSION}`);
+    return json({ok:true});
+  }
+
+  if (path === "/api/family/overview" && req.method === "GET") {
+    await ensureSchoolModuleTables(env); const session=await getSignedRoleSession(req,env,"family"); if(!session) return json({error:"Acceso requerido"},401);
+    const guardian=await env.DB.prepare(`SELECT * FROM guardians WHERE id=? AND active=1`).bind(session.actorId).first();
+    if(!guardian?.agreement_accepted_at||guardian.agreement_version!==FAMILY_AGREEMENT_VERSION) return json({error:"Primero acepta el aviso y compromiso de privacidad."},403);
+    const person=await env.DB.prepare(`SELECT id,full_name,age FROM people WHERE id=? AND status='active'`).bind(guardian.person_id).first();
+    if(!person) return json({error:"Este expediente ya no está activo."},403);
+    const profile=await env.DB.prepare(`SELECT summary,strengths,current_goals,recommendations_home,updated_at FROM family_profiles WHERE person_id=?`).bind(guardian.person_id).first();
+    const {results: own}=await env.DB.prepare(`SELECT observation_date,context,observation_text,what_helped,questions,status,professional_comment FROM family_observations WHERE guardian_id=? ORDER BY observation_date DESC,created_at DESC LIMIT 20`).bind(session.actorId).all();
+    await logAudit(env,"family",session.actorId,"view_family_portal",guardian.person_id,"Consulta de Portal Familiar");
+    return json({guardian:{full_name:guardian.full_name,relationship:guardian.relationship},person,profile:profile||{},own_observations:own||[]});
+  }
+
+  if (path === "/api/family/observation" && req.method === "POST") {
+    await ensureSchoolModuleTables(env); const session=await getSignedRoleSession(req,env,"family"); if(!session) return json({error:"Acceso requerido"},401);
+    const guardian=await env.DB.prepare(`SELECT * FROM guardians WHERE id=? AND active=1`).bind(session.actorId).first();
+    if(!guardian?.agreement_accepted_at||guardian.agreement_version!==FAMILY_AGREEMENT_VERSION) return json({error:"Primero acepta el aviso y compromiso de privacidad."},403);
+    const b=await parseBody(req), observation=safeText(b.observation_text,5000); if(!observation) return json({error:"Escribe la observación que quieres compartir."},400);
+    const id=makeId("fobs"),now=nowISO();
+    await env.DB.prepare(`INSERT INTO family_observations (id,guardian_id,person_id,observation_date,context,observation_text,what_helped,questions,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,'submitted',?,?)`).bind(id,guardian.id,guardian.person_id,safeText(b.observation_date,20)||nortiaLocalDate(),safeText(b.context,160),observation,safeText(b.what_helped,3000),safeText(b.questions,3000),now,now).run();
+    const person=await env.DB.prepare(`SELECT full_name FROM people WHERE id=?`).bind(guardian.person_id).first();
+    await logAudit(env,"family",guardian.id,"submit_family_observation",guardian.person_id,"Observación familiar enviada a revisión");
+    await createNotification(env,{type:"family_observation",personId:guardian.person_id,title:"Nueva observación familiar",message:`${guardian.full_name} compartió una observación sobre ${person?.full_name || "un menor"}.`,priority:"normal",emailSubject:"NORTIA · Nueva observación familiar",emailText:`${guardian.full_name} compartió una nueva observación familiar sobre ${person?.full_name || "un menor"}.\n\nIngresa al Panel Profesional para revisarla.`});
+    return json({ok:true,id});
+  }
+
+  if (path === "/api/appointments" && req.method === "POST") {
+    const b = await parseBody(req);
+    const name = safeText(b.client_name, 120);
+    const date = safeText(b.preferred_date, 20);
+    const time = safeText(b.preferred_time, 20);
+
+    if (!name || !date || !time) {
+      return json({ error: "Nombre, fecha y horario son obligatorios." }, 400);
+    }
+
+    const age = b.age === "" || b.age == null ? null : Number(b.age);
+    const isMinor = age !== null && Number.isFinite(age) && age < 18 ? 1 : 0;
+
+    if (isMinor && !safeText(b.guardian_name, 120)) {
+      return json({ error: "Para una persona menor de edad necesitamos el nombre del padre, madre o tutor." }, 400);
+    }
+
+    const id = makeId("appt");
+    const now = nowISO();
+
+    await env.DB.prepare(`
+      INSERT INTO appointments (
+        id, client_name, age, client_email, client_phone,
+        is_minor, guardian_name, guardian_email, guardian_phone,
+        service_type, reason_summary, preferred_date, preferred_time,
+        status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?)
+    `).bind(
+      id, name, Number.isFinite(age) ? age : null,
+      safeText(b.client_email, 160), safeText(b.client_phone, 40), isMinor,
+      safeText(b.guardian_name, 120), safeText(b.guardian_email, 160),
+      safeText(b.guardian_phone, 40), safeText(b.service_type, 80) || "orientacion_vocacional",
+      safeText(b.reason_summary, 1500), date, time, now, now
+    ).run();
+
+    await createNotification(env, {
+      type: "appointment",
+      title: "Nueva solicitud de cita",
+      message: `${name} solicitó una sesión para ${date} a las ${time}.`,
+      priority: "normal",
+      emailSubject: "NORTIA · Nueva solicitud de cita",
+      emailText:
+        `Se recibió una nueva solicitud de cita.\n\n` +
+        `Persona: ${name}\n` +
+        `Fecha solicitada: ${date}\n` +
+        `Hora solicitada: ${time}\n\n` +
+        `Ingresa al Panel Profesional de NORTIA para revisarla.`
+    });
+
+    return json({ ok: true, appointment_id: id });
+  }
+
+  if (path.startsWith("/api/admin/")) {
+    const denied = await requireAdmin(req, env);
+    if (denied) return denied;
+  }
+
+  if (path === "/api/admin/notifications/status" && req.method === "GET") {
+    await ensureNotificationsTable(env);
+
+    const unread = await env.DB.prepare(`
+      SELECT COUNT(*) AS count
+      FROM notifications
+      WHERE is_read=0
+    `).first();
+
+    return json({
+      recipient: ALEX_NOTIFICATION_EMAIL,
+      email_configured: !!env.RESEND_API_KEY,
+      from: safeText(env.RESEND_FROM_EMAIL, 240) || "NORTIA <onboarding@resend.dev>",
+      unread_count: Number(unread?.count || 0)
+    });
+  }
+
+  if (path === "/api/admin/notifications" && req.method === "GET") {
+    await ensureNotificationsTable(env);
+
+    const { results } = await env.DB.prepare(`
+      SELECT
+        n.*,
+        p.full_name AS person_name
+      FROM notifications n
+      LEFT JOIN people p ON p.id=n.person_id
+      ORDER BY n.created_at DESC
+      LIMIT 100
+    `).all();
+
+    const unread = await env.DB.prepare(`
+      SELECT COUNT(*) AS count
+      FROM notifications
+      WHERE is_read=0
+    `).first();
+
+    return json({
+      notifications: results || [],
+      unread_count: Number(unread?.count || 0)
+    });
+  }
+
+  if (path === "/api/admin/notifications/read" && req.method === "POST") {
+    await ensureNotificationsTable(env);
+    const b = await parseBody(req);
+    const id = safeText(b.id, 120);
+    const now = nowISO();
+
+    if (id) {
+      await env.DB.prepare(`
+        UPDATE notifications
+        SET is_read=1, read_at=?
+        WHERE id=?
+      `).bind(now, id).run();
+    } else {
+      await env.DB.prepare(`
+        UPDATE notifications
+        SET is_read=1, read_at=?
+        WHERE is_read=0
+      `).bind(now).run();
+    }
+
+    return json({ ok: true });
+  }
+
+  if (path === "/api/admin/notifications/test-email" && req.method === "POST") {
+    const result = await sendAlexEmail(
+      env,
+      "NORTIA · Correo de prueba",
+      "La conexión de notificaciones de NORTIA está funcionando correctamente.",
+      `
+        <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px">
+          <div style="font-size:12px;letter-spacing:2px;color:#0ea5e9;font-weight:700">NORTIA</div>
+          <h2 style="color:#0f172a">Notificaciones activas</h2>
+          <p style="color:#475569;line-height:1.6">
+            La conexión de correo de NORTIA está funcionando correctamente.
+          </p>
+          <p style="color:#64748b;font-size:13px">
+            Destinatario: ${escapeEmailHTML(ALEX_NOTIFICATION_EMAIL)}
+          </p>
+        </div>
+      `
+    );
+
+    if (!result.ok) {
+      return json({
+        error: result.error || "No se pudo enviar el correo de prueba.",
+        email_status: result.status
+      }, 500);
+    }
+
+    return json({
+      ok: true,
+      recipient: ALEX_NOTIFICATION_EMAIL
+    });
+  }
+
+
+
+  if (path === "/api/admin/data-context" && req.method === "GET") {
+    const personId=safeText(url.searchParams.get("person_id"),120); if(!personId)return json({error:"Persona obligatoria."},400);
+    const person=await env.DB.prepare(`SELECT id,full_name,status FROM people WHERE id=?`).bind(personId).first(); if(!person)return json({error:"Persona no encontrada."},404);
+    return json({person,data_context:await getPersonDataContext(env,personId)});
+  }
+  if (path === "/api/admin/data-context" && req.method === "POST") {
+    await ensureDataManagementTables(env); const b=await parseBody(req),personId=safeText(b.person_id,120),contextType=safeText(b.context_type,30); const allowed=new Set(["private","cideb","mixed","other"]); if(!personId||!allowed.has(contextType))return json({error:"Contexto de expediente inválido."},400);
+    const p=await env.DB.prepare(`SELECT id FROM people WHERE id=?`).bind(personId).first(); if(!p)return json({error:"Persona no encontrada."},404); const now=nowISO();
+    await env.DB.prepare(`INSERT INTO person_data_context (person_id,context_type,institution_name,updated_at) VALUES (?,?,?,?) ON CONFLICT(person_id) DO UPDATE SET context_type=excluded.context_type,institution_name=excluded.institution_name,updated_at=excluded.updated_at`).bind(personId,contextType,safeText(b.institution_name,180),now).run();
+    await logAudit(env,"admin","alex","update_data_context",personId,`Contexto: ${contextType}`); return json({ok:true});
+  }
+  if (path === "/api/admin/person/archive" && req.method === "POST") {
+    await ensureSchoolModuleTables(env); await ensureDataManagementTables(env); const b=await parseBody(req),personId=safeText(b.person_id,120),archive=b.archive!==false; const person=await env.DB.prepare(`SELECT id,full_name,status FROM people WHERE id=?`).bind(personId).first(); if(!person)return json({error:"Persona no encontrada."},404); const now=nowISO();
+    if(archive){
+      await env.DB.batch([env.DB.prepare(`UPDATE people SET status='archived',updated_at=? WHERE id=?`).bind(now,personId),env.DB.prepare(`UPDATE client_access SET active=0,updated_at=? WHERE person_id=?`).bind(now,personId),env.DB.prepare(`UPDATE teacher_assignments SET active=0 WHERE person_id=?`).bind(personId),env.DB.prepare(`UPDATE guardians SET active=0,updated_at=? WHERE person_id=?`).bind(now,personId)]);
+      const cur=await getPersonDataContext(env,personId); await env.DB.prepare(`INSERT INTO person_data_context (person_id,context_type,institution_name,archive_reason,archived_at,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(person_id) DO UPDATE SET archive_reason=excluded.archive_reason,archived_at=excluded.archived_at,updated_at=excluded.updated_at`).bind(personId,cur.context_type||'private',cur.institution_name||'',safeText(b.reason,500),now,now).run();
+      await logAudit(env,"admin","alex","archive_person",personId,safeText(b.reason,500)||"Expediente archivado"); return json({ok:true,status:"archived",message:"Expediente archivado. Los accesos del usuario, familia y docentes quedaron desactivados."});
+    }
+    await env.DB.batch([env.DB.prepare(`UPDATE people SET status='active',updated_at=? WHERE id=?`).bind(now,personId),env.DB.prepare(`UPDATE person_data_context SET archive_reason=NULL,archived_at=NULL,updated_at=? WHERE person_id=?`).bind(now,personId)]); await logAudit(env,"admin","alex","reactivate_person",personId,"Expediente reactivado; accesos previos permanecen desactivados por seguridad."); return json({ok:true,status:"active",message:"Expediente reactivado. Por seguridad, los accesos anteriores no se reactivaron automáticamente."});
+  }
+  if (path === "/api/admin/person/delete" && req.method === "POST") {
+    await ensureSchoolModuleTables(env); await ensureDataManagementTables(env); const b=await parseBody(req),personId=safeText(b.person_id,120); const person=await env.DB.prepare(`SELECT id,full_name FROM people WHERE id=?`).bind(personId).first(); if(!person)return json({error:"Persona no encontrada."},404);
+    if(normalizeConfirmation(b.confirmation)!==normalizeConfirmation(`ELIMINAR ${person.full_name}`))return json({error:`Para confirmar escribe exactamente: ELIMINAR ${person.full_name}`},400);
+    await env.DB.batch([env.DB.prepare(`DELETE FROM notifications WHERE person_id=?`).bind(personId),env.DB.prepare(`DELETE FROM audit_log WHERE person_id=?`).bind(personId)]); await env.DB.prepare(`DELETE FROM people WHERE id=?`).bind(personId).run(); await logAudit(env,"admin","alex","delete_person_definitive",null,"Se eliminó definitivamente un expediente individual."); return json({ok:true,deleted:true,message:"Expediente eliminado definitivamente. Las solicitudes de cita independientes no enlazadas por ID no se eliminan automáticamente."});
+  }
+  if (path === "/api/admin/institution/preview" && req.method === "GET") { const institution=safeText(url.searchParams.get("institution")||"CIDEB",120); return json(await institutionPreview(env,institution)); }
+  if (path === "/api/admin/institution/close" && req.method === "POST") {
+    await ensureSchoolModuleTables(env); await ensureDataManagementTables(env); const b=await parseBody(req),institution=safeText(b.institution||"CIDEB",120),mode=safeText(b.mode,30),people=await getInstitutionPeople(env,institution),now=nowISO();
+    if(!people.length)return json({ok:true,message:`No se encontraron expedientes asociados a ${institution}.`,preview:await institutionPreview(env,institution)});
+    if(mode==="archive"){
+      for(const person of people){ await env.DB.prepare(`UPDATE teacher_assignments SET active=0 WHERE person_id=?`).bind(person.id).run(); await env.DB.prepare(`UPDATE school_continuity SET approved_at=NULL,updated_at=? WHERE person_id=?`).bind(now,person.id).run(); await env.DB.prepare(`UPDATE person_programs SET school_followup=0,updated_at=? WHERE person_id=?`).bind(now,person.id).run();
+        if(Number(person.therapy_with_alex)){await env.DB.prepare(`INSERT INTO person_data_context (person_id,context_type,institution_name,updated_at) VALUES (?,'private','',?) ON CONFLICT(person_id) DO UPDATE SET context_type='private',institution_name='',updated_at=excluded.updated_at`).bind(person.id,now).run();}
+        else {await env.DB.prepare(`UPDATE people SET status='archived',updated_at=? WHERE id=?`).bind(now,person.id).run(); await env.DB.prepare(`UPDATE client_access SET active=0,updated_at=? WHERE person_id=?`).bind(now,person.id).run(); await env.DB.prepare(`UPDATE guardians SET active=0,updated_at=? WHERE person_id=?`).bind(now,person.id).run(); const cur=await getPersonDataContext(env,person.id); await env.DB.prepare(`INSERT INTO person_data_context (person_id,context_type,institution_name,archive_reason,archived_at,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(person_id) DO UPDATE SET archive_reason=excluded.archive_reason,archived_at=excluded.archived_at,updated_at=excluded.updated_at`).bind(person.id,cur.context_type||'cideb',cur.institution_name||institution,`Cierre de uso institucional: ${institution}`,now,now).run();}
+      }
+      await env.DB.prepare(`UPDATE teachers SET active=0,updated_at=? WHERE LOWER(COALESCE(school_name,'')) LIKE ?`).bind(now,`%${institution.toLowerCase()}%`).run(); await logAudit(env,"admin","alex","close_institution_access",null,`Se cerraron accesos institucionales de ${institution}. Los procesos terapéuticos privados se conservaron.`); return json({ok:true,mode,message:`Accesos de ${institution} cerrados. Los expedientes exclusivamente escolares quedaron archivados; los procesos terapéuticos privados se conservaron.`,preview:await institutionPreview(env,institution)});
+    }
+    if(mode==="delete"){
+      if(normalizeConfirmation(b.confirmation)!==normalizeConfirmation(`CERRAR ${institution} Y ELIMINAR`))return json({error:`Para confirmar escribe exactamente: CERRAR ${institution} Y ELIMINAR`},400);
+      for(const person of people){ await env.DB.batch([env.DB.prepare(`DELETE FROM teacher_observations WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM teacher_assignments WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM school_continuity WHERE person_id=?`).bind(person.id)]);
+        if(Number(person.therapy_with_alex)){await env.DB.prepare(`UPDATE person_programs SET school_followup=0,school_name='',grade_level='',school_year='',updated_at=? WHERE person_id=?`).bind(now,person.id).run(); await env.DB.prepare(`INSERT INTO person_data_context (person_id,context_type,institution_name,updated_at) VALUES (?,'private','',?) ON CONFLICT(person_id) DO UPDATE SET context_type='private',institution_name='',archive_reason=NULL,archived_at=NULL,updated_at=excluded.updated_at`).bind(person.id,now).run();}
+        else {await env.DB.batch([env.DB.prepare(`DELETE FROM notifications WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM audit_log WHERE person_id=?`).bind(person.id)]); await env.DB.prepare(`DELETE FROM people WHERE id=?`).bind(person.id).run();}
+      }
+      await env.DB.prepare(`DELETE FROM teachers WHERE LOWER(COALESCE(school_name,'')) LIKE ?`).bind(`%${institution.toLowerCase()}%`).run(); await logAudit(env,"admin","alex","delete_institution_data",null,`Se eliminaron datos escolares asociados a ${institution}; se preservaron procesos terapéuticos privados.`); return json({ok:true,mode,message:`Datos escolares de ${institution} eliminados. Los procesos terapéuticos privados se conservaron y dejaron de estar vinculados a la institución.`,preview:await institutionPreview(env,institution)});
+    }
+    return json({error:"Modo inválido. Usa archive o delete."},400);
+  }
+
+  if (path === "/api/admin/program" && req.method === "POST") {
+    await ensureSchoolModuleTables(env); const b=await parseBody(req), personId=safeText(b.person_id,120); if(!personId) return json({error:"Persona obligatoria."},400);
+    await env.DB.prepare(`INSERT INTO person_programs (person_id,therapy_with_alex,school_followup,school_name,grade_level,school_year,updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(person_id) DO UPDATE SET therapy_with_alex=excluded.therapy_with_alex,school_followup=excluded.school_followup,school_name=excluded.school_name,grade_level=excluded.grade_level,school_year=excluded.school_year,updated_at=excluded.updated_at`)
+      .bind(personId,b.therapy_with_alex?1:0,b.school_followup?1:0,safeText(b.school_name,180),safeText(b.grade_level,100),safeText(b.school_year,60),nowISO()).run();
+    if(!b.therapy_with_alex) await env.DB.prepare(`UPDATE client_access SET ai_enabled=0,updated_at=? WHERE person_id=?`).bind(nowISO(),personId).run();
+    return json({ok:true,program:await getPersonProgram(env,personId)});
+  }
+
+  if (path === "/api/admin/teachers" && req.method === "GET") {
+    await ensureSchoolModuleTables(env); const {results}=await env.DB.prepare(`SELECT t.id,t.full_name,t.email,t.school_name,t.active,t.agreement_accepted_at,t.last_login_at,COUNT(CASE WHEN ta.active=1 THEN 1 END) AS student_count FROM teachers t LEFT JOIN teacher_assignments ta ON ta.teacher_id=t.id GROUP BY t.id ORDER BY t.full_name`).all();
+    return json({teachers:results||[]});
+  }
+
+  if (path === "/api/admin/teachers/create" && req.method === "POST") {
+    await ensureSchoolModuleTables(env); const b=await parseBody(req); const name=safeText(b.full_name,160),personId=safeText(b.person_id,120); if(!name||!personId) return json({error:"Nombre del docente y alumno son obligatorios."},400);
+    const person=await env.DB.prepare(`SELECT full_name FROM people WHERE id=?`).bind(personId).first(); if(!person) return json({error:"Alumno no encontrado."},404);
+    const code=generateRoleAccessCode("D"),hash=await sha256(code),id=makeId("teacher"),now=nowISO(),schoolYear=safeText(b.school_year,60);
+    await env.DB.prepare(`INSERT INTO teachers (id,full_name,email,school_name,access_hash,access_hint,active,agreement_version,created_at,updated_at) VALUES (?,?,?,?,?,?,1,?,?,?)`).bind(id,name,safeText(b.email,180),safeText(b.school_name,180),hash,code.slice(-4),TEACHER_AGREEMENT_VERSION,now,now).run();
+    await env.DB.prepare(`INSERT INTO teacher_assignments (teacher_id,person_id,school_year,active,created_at) VALUES (?,?,?,1,?)`).bind(id,personId,schoolYear,now).run();
+    await logAudit(env,"admin","alex","create_teacher_access",personId,`Docente: ${name}`);
+    return json({ok:true,teacher_id:id,access_code:code,student_name:person.full_name});
+  }
+
+  if (path === "/api/admin/teachers/assign" && req.method === "POST") {
+    await ensureSchoolModuleTables(env); const b=await parseBody(req),teacherId=safeText(b.teacher_id,120),personId=safeText(b.person_id,120),schoolYear=safeText(b.school_year,60); if(!teacherId||!personId) return json({error:"Docente y alumno son obligatorios."},400);
+    await env.DB.prepare(`INSERT INTO teacher_assignments (teacher_id,person_id,school_year,active,created_at) VALUES (?,?,?,1,?) ON CONFLICT(teacher_id,person_id,school_year) DO UPDATE SET active=1`).bind(teacherId,personId,schoolYear,nowISO()).run();
+    await logAudit(env,"admin","alex","assign_teacher",personId,`Teacher ${teacherId}`); return json({ok:true});
+  }
+
+  if (path === "/api/admin/teacher-observations" && req.method === "GET") {
+    await ensureSchoolModuleTables(env); const {results}=await env.DB.prepare(`SELECT o.*,t.full_name AS teacher_name,p.full_name AS person_name FROM teacher_observations o JOIN teachers t ON t.id=o.teacher_id JOIN people p ON p.id=o.person_id ORDER BY CASE o.status WHEN 'submitted' THEN 0 ELSE 1 END,o.created_at DESC LIMIT 100`).all(); return json({observations:results||[]});
+  }
+
+  if (path === "/api/admin/teacher-observations/review" && req.method === "POST") {
+    await ensureSchoolModuleTables(env); const b=await parseBody(req),id=safeText(b.id,120); if(!id)return json({error:"Observación obligatoria."},400);
+    const row=await env.DB.prepare(`SELECT person_id FROM teacher_observations WHERE id=?`).bind(id).first(); if(!row)return json({error:"Observación no encontrada."},404);
+    await env.DB.prepare(`UPDATE teacher_observations SET status='reviewed',professional_comment=?,reviewed_at=?,updated_at=? WHERE id=?`).bind(safeText(b.professional_comment,5000),nowISO(),nowISO(),id).run();
+    await logAudit(env,"admin","alex","review_teacher_observation",row.person_id,"Observación docente revisada"); return json({ok:true});
+  }
+
+  if (path === "/api/admin/school-continuity" && req.method === "GET") {
+    await ensureSchoolModuleTables(env); const personId=safeText(url.searchParams.get("person_id"),120); if(!personId)return json({error:"Persona obligatoria."},400);
+    const continuity=await env.DB.prepare(`SELECT * FROM school_continuity WHERE person_id=?`).bind(personId).first(); const snapshot=await getSchoolSnapshot(env,personId,false); return json({continuity:continuity||{},snapshot});
+  }
+
+  if (path === "/api/admin/school-continuity" && req.method === "POST") {
+    await ensureSchoolModuleTables(env); const b=await parseBody(req),personId=safeText(b.person_id,120); if(!personId)return json({error:"Persona obligatoria."},400); const now=nowISO();
+    await env.DB.prepare(`INSERT INTO school_continuity (person_id,general_description,strengths,support_needs,strategies,watch_items,approved_at,updated_at) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(person_id) DO UPDATE SET general_description=excluded.general_description,strengths=excluded.strengths,support_needs=excluded.support_needs,strategies=excluded.strategies,watch_items=excluded.watch_items,approved_at=excluded.approved_at,updated_at=excluded.updated_at`)
+      .bind(personId,safeText(b.general_description,5000),safeText(b.strengths,5000),safeText(b.support_needs,5000),safeText(b.strategies,5000),safeText(b.watch_items,5000),b.approve?now:null,now).run();
+    await logAudit(env,"admin","alex",b.approve?"approve_school_continuity":"save_school_continuity",personId,"Ficha de continuidad escolar"); return json({ok:true});
+  }
+
+  if (path === "/api/admin/family/access" && req.method === "GET") {
+    await ensureSchoolModuleTables(env); const personId=safeText(url.searchParams.get("person_id"),120); const {results}=await env.DB.prepare(`SELECT id,full_name,relationship,email,access_hint,active,agreement_accepted_at,last_login_at FROM guardians WHERE person_id=? ORDER BY created_at DESC`).bind(personId).all(); return json({guardians:results||[]});
+  }
+
+  if (path === "/api/admin/family/access/create" && req.method === "POST") {
+    await ensureSchoolModuleTables(env); const b=await parseBody(req),personId=safeText(b.person_id,120),name=safeText(b.full_name,160); if(!personId||!name)return json({error:"Alumno y nombre del tutor son obligatorios."},400); const person=await env.DB.prepare(`SELECT full_name FROM people WHERE id=?`).bind(personId).first(); if(!person)return json({error:"Persona no encontrada."},404);
+    const code=generateRoleAccessCode("F"),hash=await sha256(code),id=makeId("guardian"),now=nowISO();
+    await env.DB.prepare(`INSERT INTO guardians (id,person_id,full_name,relationship,email,access_hash,access_hint,active,agreement_version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,1,?,?,?)`).bind(id,personId,name,safeText(b.relationship,80),safeText(b.email,180),hash,code.slice(-4),FAMILY_AGREEMENT_VERSION,now,now).run();
+    await logAudit(env,"admin","alex","create_family_access",personId,`Tutor: ${name}`); return json({ok:true,guardian_id:id,access_code:code,person_name:person.full_name});
+  }
+
+  if (path === "/api/admin/family-profile" && req.method === "GET") {
+    await ensureSchoolModuleTables(env); const personId=safeText(url.searchParams.get("person_id"),120); const profile=await env.DB.prepare(`SELECT * FROM family_profiles WHERE person_id=?`).bind(personId).first(); return json({profile:profile||{}});
+  }
+
+  if (path === "/api/admin/family-profile" && req.method === "POST") {
+    await ensureSchoolModuleTables(env); const b=await parseBody(req),personId=safeText(b.person_id,120); if(!personId)return json({error:"Persona obligatoria."},400);
+    await env.DB.prepare(`INSERT INTO family_profiles (person_id,summary,strengths,current_goals,recommendations_home,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(person_id) DO UPDATE SET summary=excluded.summary,strengths=excluded.strengths,current_goals=excluded.current_goals,recommendations_home=excluded.recommendations_home,updated_at=excluded.updated_at`).bind(personId,safeText(b.summary,5000),safeText(b.strengths,5000),safeText(b.current_goals,5000),safeText(b.recommendations_home,5000),nowISO()).run(); return json({ok:true});
+  }
+
+  if (path === "/api/admin/family-observations" && req.method === "GET") {
+    await ensureSchoolModuleTables(env); const {results}=await env.DB.prepare(`SELECT o.*,g.full_name AS guardian_name,p.full_name AS person_name FROM family_observations o JOIN guardians g ON g.id=o.guardian_id JOIN people p ON p.id=o.person_id ORDER BY CASE o.status WHEN 'submitted' THEN 0 ELSE 1 END,o.created_at DESC LIMIT 100`).all(); return json({observations:results||[]});
+  }
+
+  if (path === "/api/admin/family-observations/review" && req.method === "POST") {
+    await ensureSchoolModuleTables(env); const b=await parseBody(req),id=safeText(b.id,120); const row=await env.DB.prepare(`SELECT person_id FROM family_observations WHERE id=?`).bind(id).first(); if(!row)return json({error:"Observación no encontrada."},404);
+    await env.DB.prepare(`UPDATE family_observations SET status='reviewed',professional_comment=?,reviewed_at=?,updated_at=? WHERE id=?`).bind(safeText(b.professional_comment,5000),nowISO(),nowISO(),id).run(); await logAudit(env,"admin","alex","review_family_observation",row.person_id,"Observación familiar revisada"); return json({ok:true});
+  }
+
+  if (path === "/api/admin/audit" && req.method === "GET") {
+    await ensureSchoolModuleTables(env); const personId=safeText(url.searchParams.get("person_id"),120); const filter=personId?"WHERE a.person_id=?":""; const sql=`SELECT a.*,p.full_name AS person_name,CASE WHEN a.actor_role='teacher' THEN (SELECT full_name FROM teachers WHERE id=a.actor_id) WHEN a.actor_role='family' THEN (SELECT full_name FROM guardians WHERE id=a.actor_id) ELSE 'Alex' END AS actor_name FROM audit_log a LEFT JOIN people p ON p.id=a.person_id ${filter} ORDER BY a.created_at DESC LIMIT 150`; const q=env.DB.prepare(sql); const {results}=personId?await q.bind(personId).all():await q.all(); return json({audit:results||[]});
+  }
+
+  if (path === "/api/admin/dashboard" && req.method === "GET") {
+    const [requested, confirmed, people, risk] = await Promise.all([
+      env.DB.prepare("SELECT COUNT(*) AS count FROM appointments WHERE status='requested'").first(),
+      env.DB.prepare("SELECT COUNT(*) AS count FROM appointments WHERE status='confirmed'").first(),
+      env.DB.prepare("SELECT COUNT(*) AS count FROM people WHERE status='active'").first(),
+      env.DB.prepare("SELECT COUNT(*) AS count FROM ai_messages WHERE risk_flag=1").first()
+    ]);
+    return json({
+      requested: requested?.count || 0,
+      confirmed: confirmed?.count || 0,
+      active_people: people?.count || 0,
+      risk_messages: risk?.count || 0
+    });
+  }
+
+  if (path === "/api/admin/appointments" && req.method === "GET") {
+    const { results } = await env.DB.prepare(`
+      SELECT * FROM appointments
+      ORDER BY preferred_date ASC, preferred_time ASC
+    `).all();
+    return json({ appointments: results || [] });
+  }
+
+  if (path === "/api/admin/appointments/status" && req.method === "POST") {
+    const b = await parseBody(req);
+    const allowed = new Set(["requested","confirmed","completed","cancelled"]);
+    if (!allowed.has(b.status)) return json({ error: "Estado inválido" }, 400);
+    await env.DB.prepare(`UPDATE appointments SET status=?, updated_at=? WHERE id=?`)
+      .bind(b.status, nowISO(), safeText(b.id, 120)).run();
+    return json({ ok: true });
+  }
+
+  if (path === "/api/admin/people" && req.method === "GET") {
+    await ensureDataManagementTables(env);
+    const { results } = await env.DB.prepare(`
+      SELECT p.*,
+        (SELECT COUNT(*) FROM private_notes n WHERE n.person_id=p.id) AS note_count,
+        (SELECT COUNT(*) FROM ai_messages m WHERE m.person_id=p.id AND m.risk_flag=1) AS risk_count,
+        COALESCE((SELECT therapy_with_alex FROM person_programs pp WHERE pp.person_id=p.id),0) AS therapy_with_alex,
+        COALESCE((SELECT school_followup FROM person_programs pp WHERE pp.person_id=p.id),0) AS school_followup,
+        COALESCE((SELECT context_type FROM person_data_context dc WHERE dc.person_id=p.id),'private') AS context_type,
+        COALESCE((SELECT institution_name FROM person_data_context dc WHERE dc.person_id=p.id),'') AS institution_name
+      FROM people p
+      ORDER BY p.updated_at DESC
+    `).all();
+    return json({ people: results || [] });
+  }
+
+  if (path === "/api/admin/people" && req.method === "POST") {
+    const b = await parseBody(req);
+    const name = safeText(b.full_name, 120);
+    if (!name) return json({ error: "El nombre es obligatorio." }, 400);
+
+    const age = b.age === "" || b.age == null ? null : Number(b.age);
+    const isMinor = age !== null && Number.isFinite(age) && age < 18 ? 1 : 0;
+    const id = makeId("person");
+    const now = nowISO();
+
+    await env.DB.prepare(`
+      INSERT INTO people (
+        id, full_name, age, email, phone, is_minor,
+        guardian_name, guardian_email, guardian_phone,
+        status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+    `).bind(
+      id, name, Number.isFinite(age) ? age : null,
+      safeText(b.email, 160), safeText(b.phone, 40), isMinor,
+      safeText(b.guardian_name, 120), safeText(b.guardian_email, 160),
+      safeText(b.guardian_phone, 40), now, now
+    ).run();
+
+    await env.DB.prepare(`INSERT INTO vocational_profiles (person_id, updated_at) VALUES (?, ?)`)
+      .bind(id, now).run();
+
+    return json({ ok: true, person_id: id });
+  }
+
+  if (path.startsWith("/api/admin/person/") && req.method === "GET") {
+    const personId = path.split("/").pop();
+    const person = await env.DB.prepare(`SELECT * FROM people WHERE id=?`).bind(personId).first();
+    if (!person) return json({ error: "Persona no encontrada" }, 404);
+
+    const [{ results: notes }, vocational, { results: aiHistory }] = await Promise.all([
+      env.DB.prepare(`SELECT * FROM private_notes WHERE person_id=? ORDER BY created_at DESC`).bind(personId).all(),
+      env.DB.prepare(`SELECT * FROM vocational_profiles WHERE person_id=?`).bind(personId).first(),
+      env.DB.prepare(`SELECT role, content, risk_flag, created_at FROM ai_messages WHERE person_id=? ORDER BY created_at DESC LIMIT 20`).bind(personId).all()
+    ]);
+
+    const access = await env.DB.prepare(`
+      SELECT
+        access_hint,
+        active,
+        consent_confirmed,
+        ai_enabled,
+        created_at,
+        updated_at,
+        last_login_at
+      FROM client_access
+      WHERE person_id=?
+    `).bind(personId).first();
+
+    const { results: followups } = await env.DB.prepare(`
+      SELECT *
+      FROM followups
+      WHERE person_id=?
+      ORDER BY followup_date DESC, created_at DESC
+    `).bind(personId).all();
+
+    const { results: customFields } = await env.DB.prepare(`
+      SELECT *
+      FROM custom_fields
+      WHERE person_id=?
+      ORDER BY created_at DESC
+    `).bind(personId).all();
+
+    const { results: exercises } = await env.DB.prepare(`
+      SELECT *
+      FROM exercises
+      WHERE person_id=?
+      ORDER BY created_at DESC
+    `).bind(personId).all();
+
+    const { results: clientAIHistory } = await env.DB.prepare(`
+      SELECT role, content, risk_flag, created_at
+      FROM client_ai_messages
+      WHERE person_id=?
+      ORDER BY created_at DESC
+      LIMIT 20
+    `).bind(personId).all();
+
+    const program = await getPersonProgram(env, personId);
+    const dataContext = await getPersonDataContext(env, personId);
+    const { results: recentAudit } = await env.DB.prepare(`SELECT actor_role,actor_id,action,detail,created_at FROM audit_log WHERE person_id=? ORDER BY created_at DESC LIMIT 20`).bind(personId).all();
+
+    return json({
+      person,
+      program,
+      data_context: dataContext,
+      notes: notes || [],
+      vocational: vocational || null,
+      ai_history: aiHistory || [],
+      access: access || null,
+      followups: followups || [],
+      custom_fields: customFields || [],
+      exercises: exercises || [],
+      client_ai_history: clientAIHistory || [],
+      recent_audit: recentAudit || []
+    });
+  }
+
+  if (path === "/api/admin/note" && req.method === "POST") {
+    const b = await parseBody(req);
+    const personId = safeText(b.person_id, 120);
+    const noteText = safeText(b.note_text, 8000);
+    if (!personId || !noteText) return json({ error: "Faltan datos." }, 400);
+
+    const now = nowISO();
+    await env.DB.prepare(`
+      INSERT INTO private_notes (id, person_id, note_text, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).bind(makeId("note"), personId, noteText, now, now).run();
+
+    await env.DB.prepare(`UPDATE people SET updated_at=? WHERE id=?`).bind(now, personId).run();
+    return json({ ok: true });
+  }
+
+  if (path === "/api/admin/vocational" && req.method === "POST") {
+    const b = await parseBody(req);
+    const personId = safeText(b.person_id, 120);
+    if (!personId) return json({ error: "Selecciona una persona." }, 400);
+
+    await env.DB.prepare(`
+      INSERT INTO vocational_profiles (
+        person_id, interests, strengths, values_text, favorite_subjects,
+        work_style, careers_considered, open_questions, guidance_plan,
+        ai_context, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(person_id) DO UPDATE SET
+        interests=excluded.interests,
+        strengths=excluded.strengths,
+        values_text=excluded.values_text,
+        favorite_subjects=excluded.favorite_subjects,
+        work_style=excluded.work_style,
+        careers_considered=excluded.careers_considered,
+        open_questions=excluded.open_questions,
+        guidance_plan=excluded.guidance_plan,
+        ai_context=excluded.ai_context,
+        updated_at=excluded.updated_at
+    `).bind(
+      personId, safeText(b.interests), safeText(b.strengths), safeText(b.values_text),
+      safeText(b.favorite_subjects), safeText(b.work_style), safeText(b.careers_considered),
+      safeText(b.open_questions), safeText(b.guidance_plan, 5000), safeText(b.ai_context, 5000), nowISO()
+    ).run();
+
+    return json({ ok: true });
+  }
+
+
+  if (path === "/api/admin/access" && req.method === "GET") {
+    const personId = safeText(url.searchParams.get("person_id"), 120);
+
+    if (!personId) {
+      return json({ error: "Persona obligatoria." }, 400);
+    }
+
+    const access = await env.DB.prepare(`
+      SELECT
+        person_id,
+        access_hint,
+        active,
+        consent_confirmed,
+        ai_enabled,
+        created_at,
+        updated_at,
+        last_login_at
+      FROM client_access
+      WHERE person_id=?
+    `).bind(personId).first();
+
+    return json({ access: access || null });
+  }
+
+  if (path === "/api/admin/access/create" && req.method === "POST") {
+    const b = await parseBody(req);
+    const personId = safeText(b.person_id, 120);
+
+    const person = await env.DB.prepare(`
+      SELECT id, full_name
+      FROM people
+      WHERE id=?
+    `).bind(personId).first();
+
+    if (!person) {
+      return json({ error: "Persona no encontrada." }, 404);
+    }
+
+    const code = generateAccessCode();
+    const hash = await sha256(code);
+    const hint = code.slice(-4);
+    const now = nowISO();
+
+    await env.DB.prepare(`
+      INSERT INTO client_access (
+        person_id,
+        access_hash,
+        access_hint,
+        active,
+        consent_confirmed,
+        ai_enabled,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, 1, 0, 0, ?, ?)
+      ON CONFLICT(person_id) DO UPDATE SET
+        access_hash=excluded.access_hash,
+        access_hint=excluded.access_hint,
+        active=1,
+        ai_enabled=0,
+        updated_at=excluded.updated_at
+    `).bind(personId, hash, hint, now, now).run();
+
+    return json({
+      ok: true,
+      person_name: person.full_name,
+      access_code: code,
+      access_hint: hint
+    });
+  }
+
+  if (path === "/api/admin/access/settings" && req.method === "POST") {
+    const b = await parseBody(req);
+    const personId = safeText(b.person_id, 120);
+
+    const person = await env.DB.prepare(`
+      SELECT id, is_minor
+      FROM people
+      WHERE id=?
+    `).bind(personId).first();
+
+    if (!person) {
+      return json({ error: "Persona no encontrada." }, 404);
+    }
+
+    const access = await env.DB.prepare(`
+      SELECT person_id
+      FROM client_access
+      WHERE person_id=?
+    `).bind(personId).first();
+
+    if (!access) {
+      return json({
+        error: "Primero crea un acceso para esta persona."
+      }, 400);
+    }
+
+    const active = b.active ? 1 : 0;
+    const consent = b.consent_confirmed ? 1 : 0;
+    const aiEnabled = b.ai_enabled ? 1 : 0;
+    const program = await getPersonProgram(env, personId);
+
+    if (aiEnabled && !program.therapy_with_alex) {
+      return json({ error: "NORTIA Reflexión solo puede habilitarse para personas con proceso terapéutico activo con Alex." }, 400);
+    }
+
+    if (aiEnabled && !consent) {
+      return json({
+        error: person.is_minor
+          ? "Para habilitar la IA en una persona menor, primero confirma el consentimiento correspondiente."
+          : "Confirma el consentimiento antes de habilitar la IA."
+      }, 400);
+    }
+
+    await env.DB.prepare(`
+      UPDATE client_access
+      SET active=?, consent_confirmed=?, ai_enabled=?, updated_at=?
+      WHERE person_id=?
+    `).bind(active, consent, aiEnabled, nowISO(), personId).run();
+
+    return json({ ok: true });
+  }
+
+  if (path === "/api/admin/followup" && req.method === "POST") {
+    const b = await parseBody(req);
+    const personId = safeText(b.person_id, 120);
+    const date = safeText(b.followup_date, 20) || nowISO().slice(0, 10);
+
+    if (!personId) {
+      return json({ error: "Persona obligatoria." }, 400);
+    }
+
+    const now = nowISO();
+
+    await env.DB.prepare(`
+      INSERT INTO followups (
+        id,
+        person_id,
+        followup_date,
+        title,
+        private_notes,
+        shared_summary,
+        agreements,
+        next_steps,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      makeId("follow"),
+      personId,
+      date,
+      safeText(b.title, 200),
+      safeText(b.private_notes, 8000),
+      safeText(b.shared_summary, 5000),
+      safeText(b.agreements, 4000),
+      safeText(b.next_steps, 4000),
+      now,
+      now
+    ).run();
+
+    await env.DB.prepare(`
+      UPDATE people SET updated_at=? WHERE id=?
+    `).bind(now, personId).run();
+
+    return json({ ok: true });
+  }
+
+  if (path === "/api/admin/custom-field" && req.method === "POST") {
+    const b = await parseBody(req);
+    const personId = safeText(b.person_id, 120);
+    const name = safeText(b.field_name, 160);
+    const visibility = safeText(b.visibility, 20);
+
+    const allowedVisibility = new Set([
+      "private",
+      "shared",
+      "ai",
+      "shared_ai"
+    ]);
+
+    if (!personId || !name) {
+      return json({
+        error: "Persona y nombre del campo son obligatorios."
+      }, 400);
+    }
+
+    if (!allowedVisibility.has(visibility)) {
+      return json({ error: "Visibilidad inválida." }, 400);
+    }
+
+    const now = nowISO();
+
+    await env.DB.prepare(`
+      INSERT INTO custom_fields (
+        id,
+        person_id,
+        field_name,
+        field_value,
+        visibility,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      makeId("field"),
+      personId,
+      name,
+      safeText(b.field_value, 8000),
+      visibility,
+      now,
+      now
+    ).run();
+
+    return json({ ok: true });
+  }
+
+  if (path === "/api/admin/exercise" && req.method === "POST") {
+    const b = await parseBody(req);
+    const personId = safeText(b.person_id, 120);
+    const title = safeText(b.title, 200);
+
+    if (!personId || !title) {
+      return json({
+        error: "Persona y título son obligatorios."
+      }, 400);
+    }
+
+    const now = nowISO();
+
+    await env.DB.prepare(`
+      INSERT INTO exercises (
+        id,
+        person_id,
+        title,
+        description,
+        due_date,
+        status,
+        shared,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+    `).bind(
+      makeId("exercise"),
+      personId,
+      title,
+      safeText(b.description, 5000),
+      safeText(b.due_date, 20),
+      b.shared === false ? 0 : 1,
+      now,
+      now
+    ).run();
+
+    return json({ ok: true });
+  }
+
+  if (path === "/api/admin/ai-usage" && req.method === "GET") {
+    const personId=safeText(url.searchParams.get("person_id"),120);
+    if(!personId) return json({error:"Persona obligatoria."},400);
+    return json(await getAIUsage(env,personId));
+  }
+
+  if (path === "/api/admin/ai-usage/grant" && req.method === "POST") {
+    const b=await parseBody(req), personId=safeText(b.person_id,120), amount=Math.min(50,Math.max(1,Number(b.amount||5)));
+    if(!personId) return json({error:"Persona obligatoria."},400);
+    const d=nortiaLocalDate(), now=nowISO();
+    await env.DB.prepare(`INSERT INTO ai_daily_usage (person_id,usage_date,used_count,extra_messages,updated_at) VALUES (?,?,0,?,?) ON CONFLICT(person_id,usage_date) DO UPDATE SET extra_messages=ai_daily_usage.extra_messages+excluded.extra_messages, updated_at=excluded.updated_at`).bind(personId,d,amount,now).run();
+    return json({ok:true,usage:await getAIUsage(env,personId)});
+  }
+
+  if (path === "/api/admin/ai-health" && req.method === "POST") {
+    if (!env.AI || typeof env.AI.run !== "function") {
+      return json({
+        error: "El binding AI no está disponible. Revisa que el binding se llame exactamente AI."
+      }, 500);
+    }
+
+    const model = "@cf/meta/llama-3.1-8b-instruct-fast";
+
+    try {
+      const result = await env.AI.run(model, {
+        messages: [{ role: "user", content: "Responde únicamente con la palabra OK." }],
+        max_tokens: 20
+      });
+
+      const text = extractAIText(result);
+
+      if (!text) {
+        return json({
+          error: "Workers AI respondió, pero no devolvió texto reconocible."
+        }, 502);
+      }
+
+      return json({
+        ok: true,
+        model,
+        response: text.slice(0, 120)
+      });
+    } catch (error) {
+      return json({
+        error: `Workers AI: ${safeText(error?.message || error, 500)}`
+      }, 502);
+    }
+  }
+
+  if (path === "/api/admin/ai-reflection" && req.method === "POST") {
+    const b = await parseBody(req);
+
+    const personId = safeText(b.person_id, 120) || "__demo__";
+    const message = safeText(b.message, 4000);
+
+    if (!message) {
+      return json({
+        error: "Escribe un mensaje para probar NORTIA Reflexión."
+      }, 400);
+    }
+
+    if (!env.AI || typeof env.AI.run !== "function") {
+      return json({
+        error: "No encuentro el binding de Workers AI. En Cloudflare debe llamarse exactamente AI."
+      }, 500);
+    }
+
+    if (highRiskLanguage(message)) {
+      const safetyReply =
+        "Lo que escribes puede indicar que necesitas apoyo humano inmediato. " +
+        "Este espacio no es adecuado para manejar una crisis. " +
+        "Si existe riesgo de hacerte daño o estás en peligro, busca de inmediato " +
+        "a un adulto de confianza, a Alex u otro profesional, o contacta los servicios " +
+        "de emergencia de tu localidad.";
+
+      if (personId !== "__demo__") {
+        const createdAt = nowISO();
+
+        await env.DB.batch([
+          env.DB.prepare(`
+            INSERT INTO ai_messages (
+              id, person_id, role, content, risk_flag, created_at
+            ) VALUES (?, ?, 'user', ?, 1, ?)
+          `).bind(makeId("msg"), personId, message, createdAt),
+
+          env.DB.prepare(`
+            INSERT INTO ai_messages (
+              id, person_id, role, content, risk_flag, created_at
+            ) VALUES (?, ?, 'assistant', ?, 1, ?)
+          `).bind(makeId("msg"), personId, safetyReply, createdAt)
+        ]);
+      }
+
+      return json({
+        ok: true,
+        risk_flag: true,
+        reply: safetyReply
+      });
+    }
+
+    let person = null;
+    let vocational = null;
+
+    if (personId !== "__demo__") {
+      person = await env.DB.prepare(`
+        SELECT * FROM people WHERE id=?
+      `).bind(personId).first();
+
+      if (!person) {
+        return json({
+          error: "La persona seleccionada ya no existe."
+        }, 404);
+      }
+
+      vocational = await env.DB.prepare(`
+        SELECT * FROM vocational_profiles WHERE person_id=?
+      `).bind(personId).first();
+    }
+
+    const isDemo = personId === "__demo__";
+
+    const system = `
+Eres "NORTIA Reflexión", una herramienta de orientación vocacional y desarrollo personal supervisada por Alex.
+
+TU PAPEL:
+Ayudar a ordenar ideas, explorar opciones, identificar preguntas útiles y convertir una inquietud difusa en próximos pasos concretos.
+
+NO ERES:
+- un terapeuta;
+- un diagnóstico;
+- un sustituto de atención profesional;
+- una prueba vocacional definitiva.
+
+REGLAS:
+- No diagnostiques trastornos ni enfermedades.
+- No recomiendes medicamentos.
+- No tomes decisiones por la persona.
+- No digas "tu carrera ideal es X".
+- No prometas resultados.
+- No fomentes dependencia emocional.
+- Haz preguntas útiles sin interrogar.
+- Evita respuestas genéricas del tipo "sigue tus sueños".
+- Prioriza claridad, estructura y acciones pequeñas.
+- Responde en español natural.
+- Usa máximo 220 palabras salvo que la comparación realmente requiera más.
+- Cuando compares carreras u opciones, usa:
+  1. Lo que parece atraer de cada opción
+  2. Diferencias que vale la pena investigar
+  3. Un siguiente paso concreto
+- Termina con una sola pregunta breve cuando sea útil.
+
+MODO:
+${isDemo ? "Prueba general interna, sin expediente de una persona real." : "Proceso individual supervisado por Alex."}
+
+CONTEXTO PERMITIDO:
+Nombre: ${person?.full_name || "No aplica en modo prueba"}
+Edad: ${person?.age ?? "No indicada"}
+Intereses: ${vocational?.interests || "No registrados"}
+Fortalezas: ${vocational?.strengths || "No registradas"}
+Valores: ${vocational?.values_text || "No registrados"}
+Materias favoritas: ${vocational?.favorite_subjects || "No registradas"}
+Estilo de trabajo: ${vocational?.work_style || "No registrado"}
+Carreras consideradas: ${vocational?.careers_considered || "No registradas"}
+Preguntas abiertas: ${vocational?.open_questions || "No registradas"}
+Plan de orientación: ${vocational?.guidance_plan || "Sin plan registrado"}
+Contexto aprobado por Alex para IA: ${vocational?.ai_context || "Ninguno"}
+
+Las notas privadas de Alex NO forman parte del contexto.
+`.trim();
+
+    const model = "@cf/meta/llama-3.1-8b-instruct-fast";
+    let reply = "";
+
+    try {
+      const result = await env.AI.run(model, {
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: message }
+        ],
+        max_tokens: 320
+      });
+
+      reply = extractAIText(result).trim();
+
+      if (!reply) {
+        return json({
+          error: "Workers AI respondió sin texto. Usa “Probar conexión IA” para revisar el binding."
+        }, 502);
+      }
+    } catch (error) {
+      return json({
+        error: `Workers AI: ${safeText(error?.message || error, 500)}`
+      }, 502);
+    }
+
+    if (!isDemo) {
+      const createdAt = nowISO();
+
+      await env.DB.batch([
+        env.DB.prepare(`
+          INSERT INTO ai_messages (
+            id, person_id, role, content, risk_flag, created_at
+          ) VALUES (?, ?, 'user', ?, 0, ?)
+        `).bind(makeId("msg"), personId, message, createdAt),
+
+        env.DB.prepare(`
+          INSERT INTO ai_messages (
+            id, person_id, role, content, risk_flag, created_at
+          ) VALUES (?, ?, 'assistant', ?, 0, ?)
+        `).bind(makeId("msg"), personId, safeText(reply, 6000), createdAt)
+      ]);
+    }
+
+    return json({
+      ok: true,
+      model,
+      demo: isDemo,
+      risk_flag: false,
+      reply
+    });
+  }
+
+  return json({ error: "Ruta no encontrada" }, 404);
+}
+
+export default {
+  async fetch(req, env) {
+    const url = new URL(req.url);
+
+    if (url.pathname.startsWith("/api/")) {
+      if (isCrossSiteMutation(req, url)) {
+        return addSecurityHeaders(
+          json({ error: "Solicitud bloqueada por seguridad." }, 403),
+          true
+        );
+      }
+
+      try {
+        return addSecurityHeaders(await api(req, env, url), true);
+      } catch (error) {
+        console.error("NORTIA internal error", error);
+        return addSecurityHeaders(
+          json({ error: "Ocurrió un error interno. Intenta nuevamente." }, 500),
+          true
+        );
+      }
+    }
+
+    const assetResponse = await env.ASSETS.fetch(req);
+    return addSecurityHeaders(assetResponse, false);
+  }
+};
