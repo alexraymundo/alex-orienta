@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+<a class="skip-link" href="#mainContent">Saltar al contenido</a>
 <header class="topbar">
   <a class="brand" href="/">
     <span class="brand-mark">N</span>
@@ -51,12 +52,12 @@
       </div>
     </details>
     <a class="ghost-btn" href="/mi-espacio.html">Mi Espacio</a>
-    <a class="professional-link" href="/admin.html">Alex</a>
+    <a class="professional-link" href="/admin.html">Profesional</a>
     <button class="primary-btn" data-open-booking>AGENDAR SESIÓN</button>
   </div>
 </header>
 
-<main>
+<main id="mainContent">
   <section class="hero">
     <div class="hero-copy">
       <span class="eyebrow">ORIENTACIÓN VOCACIONAL · ACOMPAÑAMIENTO · DESARROLLO</span>
@@ -76,14 +77,14 @@
         <span>Orientación vocacional</span>
         <span>Seguimiento individual</span>
         <span>Continuidad escolar</span>
-        <span class="context-badge">Aplicación en contexto educativo · CIDEB</span>
+        <span class="context-badge">Experiencia en contexto educativo · CIDEB</span>
       </div>
     </div>
 
     <div class="hero-panel">
       <div class="glass-card">
         <span class="mini-label">ENFOQUE</span>
-        <h3>Explorar → Entender → Decidir</h3>
+        <h2>Explorar → Entender → Decidir</h2>
         <p>
           Un espacio para aterrizar ideas, contrastar opciones
           y construir un proceso de decisión más claro.
@@ -116,13 +117,43 @@
     </div>
   </section>
 
-  <section class="section experience-section" id="experiencia">
+  <section class="section" id="servicios">
+    <div class="section-head">
+      <span class="eyebrow">SERVICIOS</span>
+      <h2>Un acompañamiento pensado para decisiones reales.</h2>
+      <p class="lead">
+        La experiencia está diseñada para que cada proceso tenga un objetivo claro,
+        seguimiento y herramientas útiles.
+      </p>
+    </div>
+
+    <div class="service-grid">
+      <article>
+        <b>01</b>
+        <h3>Orientación vocacional</h3>
+        <p>Exploración de intereses, fortalezas, valores, opciones académicas y toma de decisiones.</p>
+      </article>
+      <article>
+        <b>02</b>
+        <h3>Acompañamiento personal</h3>
+        <p>Metas, organización, situaciones personales y decisiones importantes con un espacio estructurado.</p>
+      </article>
+      <article>
+        <b>03</b>
+        <h3>Desarrollo académico</h3>
+        <p>Hábitos, orden, objetivos escolares y preparación de pasos siguientes con seguimiento.</p>
+      </article>
+    </div>
+  </section>
+
+  
+<section class="section experience-section" id="experiencia">
     <div class="experience-shell">
       <div class="experience-copy">
         <span class="eyebrow">EXPERIENCIA APLICADA</span>
         <h2>Diseñada desde necesidades reales de acompañamiento escolar.</h2>
         <p class="lead">
-          NORTIA se utiliza actualmente por Alejandro Rosales como herramienta de apoyo
+          NORTIA se utiliza por Alejandro Rosales como herramienta de apoyo
           en su trabajo de acompañamiento y seguimiento con estudiantes de CIDEB.
         </p>
         <p>
@@ -166,35 +197,6 @@
           </article>
         </div>
       </div>
-    </div>
-  </section>
-
-  <section class="section" id="servicios">
-    <div class="section-head">
-      <span class="eyebrow">SERVICIOS</span>
-      <h2>Un acompañamiento pensado para decisiones reales.</h2>
-      <p class="lead">
-        La experiencia está diseñada para que cada proceso tenga un objetivo claro,
-        seguimiento y herramientas útiles.
-      </p>
-    </div>
-
-    <div class="service-grid">
-      <article>
-        <b>01</b>
-        <h3>Orientación vocacional</h3>
-        <p>Exploración de intereses, fortalezas, valores, opciones académicas y toma de decisiones.</p>
-      </article>
-      <article>
-        <b>02</b>
-        <h3>Acompañamiento personal</h3>
-        <p>Metas, organización, situaciones personales y decisiones importantes con un espacio estructurado.</p>
-      </article>
-      <article>
-        <b>03</b>
-        <h3>Desarrollo académico</h3>
-        <p>Hábitos, orden, objetivos escolares y preparación de pasos siguientes con seguimiento.</p>
-      </article>
     </div>
   </section>
 
@@ -311,27 +313,28 @@
     </div>
   </div>
   <span>Claridad para tu siguiente paso.</span>
-  <a href="/mi-espacio.html">Mi Espacio</a><a href="/familia.html">Familias</a><a href="/docente.html">Docentes</a><a href="/admin.html">Acceso profesional</a><small class="version-mark">v7.3</small>
+  <a href="/mi-espacio.html">Mi Espacio</a><a href="/familia.html">Familias</a><a href="/docente.html">Docentes</a><a href="/privacidad.html">Privacidad</a><a href="/admin.html">Acceso profesional</a><small class="version-mark">v8.3.1</small>
 </footer>
 
-<div class="modal" id="bookingModal" hidden>
+<div class="modal" id="bookingModal" role="dialog" aria-modal="true" aria-labelledby="bookingTitle" hidden>
   <div class="modal-backdrop" data-close-booking></div>
   <div class="modal-card">
-    <button class="modal-close" type="button" data-close-booking>×</button>
+    <button class="modal-close" type="button" data-close-booking aria-label="Cerrar solicitud de sesión">×</button>
     <span class="eyebrow">SOLICITUD DE SESIÓN</span>
-    <h2>Agenda una cita</h2>
+    <h2 id="bookingTitle">Agenda una cita</h2>
     <p class="muted">Envía tus datos y Alex confirmará el horario posteriormente.</p>
 
     <form id="bookingForm">
       <div class="two-cols">
-        <label>Nombre completo<input name="client_name" required></label>
-        <label>Edad<input name="age" type="number" min="8" max="99"></label>
+        <label>Nombre completo<input name="client_name" autocomplete="name" required></label>
+        <label>Edad<input name="age" id="bookingAge" type="number" min="8" max="99" inputmode="numeric" required></label>
       </div>
 
       <div class="two-cols">
-        <label>Correo<input name="client_email" type="email"></label>
-        <label>Teléfono<input name="client_phone"></label>
+        <label>Correo<input name="client_email" type="email" autocomplete="email"></label>
+        <label>Teléfono<input name="client_phone" inputmode="tel" autocomplete="tel"></label>
       </div>
+      <p class="microcopy contact-help">Necesitamos al menos un correo o teléfono para confirmar la sesión.</p>
 
       <label>Tipo de acompañamiento
         <select name="service_type">
@@ -346,26 +349,31 @@
       </label>
 
       <div class="two-cols">
-        <label>Fecha preferida<input name="preferred_date" type="date" required></label>
+        <label>Fecha preferida<input name="preferred_date" id="preferredDate" type="date" required></label>
         <label>Horario preferido<input name="preferred_time" type="time" required></label>
       </div>
 
-      <div class="guardian-box">
-        <p>Si la persona es menor de edad, agrega los datos del padre, madre o tutor.</p>
+      <div class="guardian-box" id="guardianBox" hidden>
+        <p>Para menores de edad necesitamos los datos del padre, madre o tutor y al menos un medio de contacto.</p>
         <div class="two-cols">
-          <label>Nombre del tutor<input name="guardian_name"></label>
-          <label>Teléfono del tutor<input name="guardian_phone"></label>
+          <label>Nombre del tutor<input name="guardian_name" autocomplete="name"></label>
+          <label>Teléfono del tutor<input name="guardian_phone" inputmode="tel" autocomplete="tel"></label>
         </div>
-        <label>Correo del tutor<input name="guardian_email" type="email"></label>
+        <label>Correo del tutor<input name="guardian_email" type="email" autocomplete="email"></label>
       </div>
 
       <label class="consent">
-        <input type="checkbox" required>
-        <span>Acepto el uso de estos datos únicamente para gestionar la solicitud y el acompañamiento correspondiente.</span>
+        <input type="checkbox" name="privacy_consent" value="yes" required>
+        <span>He leído y acepto el <a href="/privacidad.html" target="_blank" rel="noopener">aviso de privacidad v2.0</a> para usar estos datos únicamente en la gestión de la solicitud y el acompañamiento correspondiente.</span>
       </label>
+      <input type="hidden" name="privacy_version" id="privacyVersion" value="2.0">
+      <div id="turnstileWrap" hidden>
+        <div id="turnstileWidget" class="turnstile-slot" aria-label="Verificación de seguridad"></div>
+        <p id="turnstileHelp" class="microcopy">Cargando verificación de seguridad…</p>
+      </div>
 
-      <button class="primary-btn full" type="submit">ENVIAR SOLICITUD</button>
-      <div id="bookingStatus" class="status"></div>
+      <button class="primary-btn full" id="bookingSubmitBtn" type="submit">ENVIAR SOLICITUD</button>
+      <div id="bookingStatus" class="status" role="status" aria-live="polite"></div>
     </form>
   </div>
 </div>

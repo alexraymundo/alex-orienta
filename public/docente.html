@@ -1,22 +1,61 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NORTIA | Portal Docente</title><link rel="stylesheet" href="/style.css"></head>
+<html lang="es"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#08111F"><title>NORTIA | Portal Docente</title><link rel="stylesheet" href="/style.css"></head>
 <body class="role-body">
-<section class="role-login" id="teacherLogin"><div class="role-login-card"><a class="brand" href="/"><span class="brand-mark">N</span><div><small>ACCESO ESCOLAR · CIDEB</small><strong>NORTIA</strong></div></a><span class="eyebrow">CIDEB · PORTAL DOCENTE</span><h1>Observa. Registra. Da continuidad.</h1><p class="muted">Ingresa tu código individual de acceso CIDEB proporcionado por el profesional responsable.</p><input id="teacherCode" placeholder="NT-D-XXXX-XXXX" autocomplete="one-time-code"><button class="primary-btn full" id="teacherLoginBtn">ENTRAR</button><div id="teacherLoginStatus" class="status"></div></div></section>
-<div id="teacherAgreement" class="agreement-screen" hidden><div class="agreement-card"><span class="eyebrow">ANTES DE CONTINUAR</span><h1>Acuerdo de confidencialidad y uso autorizado</h1><div class="agreement-text"><p>La información disponible en NORTIA se proporciona exclusivamente para acompañamiento educativo de los alumnos que tengas asignados.</p><p>Te comprometes a no divulgar, copiar, fotografiar, reenviar ni utilizar la información para finalidades distintas a las autorizadas; a describir conductas observables evitando diagnósticos o etiquetas; y a proteger la privacidad del alumno.</p><p>Tu acceso es individual, puede ser revocado y las consultas quedan registradas para fines de seguridad.</p></div><label>Nombre completo para firma<input id="teacherSignedName"></label><label class="toggle-line"><input id="teacherAgreementCheck" type="checkbox"><span>He leído y acepto este acuerdo.</span></label><button class="primary-btn full" id="teacherAcceptBtn">ACEPTAR Y CONTINUAR</button><div id="teacherAgreementStatus" class="status"></div><small class="legal-note">Plantilla operativa. La institución/profesional debe validar el texto jurídico definitivo antes de uso real.</small></div></div>
-<div id="teacherApp" class="role-app" hidden><header class="role-topbar"><a class="brand" href="/"><span class="brand-mark">N</span><div><small>CIDEB · PORTAL DOCENTE</small><strong>NORTIA</strong></div></a><div id="teacherIdentity" class="role-identity"></div><button id="teacherLogout" class="client-logout">Salir</button></header><main class="role-main"><section><span class="eyebrow">MIS ALUMNOS</span><h1>Continuidad escolar</h1><p class="muted">Solo aparecen alumnos que te fueron asignados. NORTIA no muestra notas privadas ni herramientas de IA en este portal.</p><div class="teacher-student-search"><span>⌕</span><input id="teacherStudentSearch" autocomplete="off" placeholder="Buscar en mis alumnos..."></div><div id="teacherStudents" class="student-grid"></div></section><section id="teacherStudentDetail" hidden><div class="role-section-head teacher-report-heading"><div><span class="eyebrow">INFORME DE CONTINUIDAD · CIDEB</span><h2 id="teacherStudentName"></h2><p id="teacherStudentMeta" class="muted"></p></div><button class="secondary-btn" id="backToStudents">VOLVER A MIS ALUMNOS</button></div>
-<div id="teacherReportState"></div>
-<div class="teacher-report-shell" id="teacherApprovedReport" hidden>
-  <section class="teacher-report-hero">
-    <div><span class="eyebrow">RESUMEN PARA EL DOCENTE</span><h3>Información útil para continuar el acompañamiento</h3><p>Este informe reúne información aprobada por el profesional y datos agregados de observaciones revisadas. Es descriptivo y no constituye diagnóstico.</p></div>
-    <span class="report-safety-pill">NO DIAGNÓSTICO</span>
-  </section>
-  <div id="teacherReportKpis" class="teacher-report-kpis"></div>
-  <div class="teacher-report-grid">
-    <section class="report-card report-card-wide"><div class="report-card-head"><div><span class="eyebrow">PERFIL VISUAL</span><h3>Apoyo observado por área</h3></div><small>Escala 0–3</small></div><div id="teacherSupportChart" class="support-chart enhanced-support-chart"></div></section>
-    <section class="report-card"><div class="report-card-head"><div><span class="eyebrow">CONTEXTO</span><h3>Dónde se han registrado observaciones</h3></div></div><div id="teacherContextChart" class="context-chart"></div></section>
-    <section class="report-card"><div class="report-card-head"><div><span class="eyebrow">EVOLUCIÓN</span><h3>Últimos registros por área</h3></div></div><div id="teacherTrendChart" class="trend-chart"></div></section>
-  </div>
-  <div id="teacherContinuity" class="teacher-continuity-sections"></div>
+<section class="role-login" id="teacherLogin"><div class="role-login-card"><a class="brand" href="/"><span class="brand-mark">N</span><div><small>ACCESO ESCOLAR · CIDEB</small><strong>NORTIA</strong></div></a><span class="eyebrow">CIDEB · PORTAL DOCENTE</span><h1>Observa. Registra. Da continuidad.</h1><p class="muted">Ingresa tu código individual de acceso CIDEB proporcionado por el profesional responsable.</p><input id="teacherCode" aria-label="Código de acceso docente" placeholder="NT-D-XXXX-XXXX" autocomplete="one-time-code" spellcheck="false" autocapitalize="characters"><button class="primary-btn full" id="teacherLoginBtn">ENTRAR</button><div id="teacherLoginStatus" class="status"></div></div></section>
+<div id="teacherAgreement" class="agreement-screen" hidden><div class="agreement-card"><span class="eyebrow">ANTES DE CONTINUAR</span><h1>Acuerdo de confidencialidad y uso autorizado</h1><div class="agreement-text"><p>La información disponible en NORTIA se proporciona exclusivamente para acompañamiento educativo de los alumnos que tengas asignados.</p><p>Te comprometes a no divulgar, copiar, fotografiar, reenviar ni utilizar la información para finalidades distintas a las autorizadas; a describir conductas observables evitando diagnósticos o etiquetas; y a proteger la privacidad del alumno.</p><p>Tu acceso es individual, puede ser revocado y las consultas quedan registradas para fines de seguridad.</p></div><label>Nombre completo para firma<input id="teacherSignedName"></label><label class="toggle-line"><input id="teacherAgreementCheck" type="checkbox"><span>He leído y acepto este acuerdo.</span></label><button class="primary-btn full" id="teacherAcceptBtn">ACEPTAR Y CONTINUAR</button><div id="teacherAgreementStatus" class="status"></div><small class="legal-note">Versión 2.0 · Acuerdo de confidencialidad y uso autorizado.</small></div></div>
+<div id="teacherApp" class="role-app teacher-clean-app" hidden>
+  <header class="role-topbar">
+    <a class="brand" href="/"><span class="brand-mark">N</span><div><small>CIDEB · PORTAL DOCENTE</small><strong>NORTIA</strong></div></a>
+    <div id="teacherIdentity" class="role-identity"></div>
+    <button id="teacherLogout" class="client-logout">Salir</button>
+  </header>
+
+  <main class="role-main teacher-clean-main">
+    <section id="teacherStudentListView">
+      <div class="teacher-home-head"><div><span class="eyebrow">CIDEB · MIS ALUMNOS</span><h1>Seguimiento escolar</h1><p class="muted">Elige un alumno para consultar su continuidad o registrar una observación.</p></div><div class="teacher-scope-note"><strong>Solo tus alumnos</strong><small>Sin notas privadas · Sin IA</small></div></div>
+      <div class="teacher-student-search"><span>⌕</span><input id="teacherStudentSearch" aria-label="Buscar alumno" autocomplete="off" placeholder="Buscar alumno, grado o ciclo..."></div>
+      <div id="teacherStudents" class="student-grid clean-student-grid"></div>
+    </section>
+
+    <section id="teacherStudentDetail" hidden>
+      <div class="role-section-head teacher-student-detail-head">
+        <div><button class="teacher-back-link" id="backToStudents">← Mis alumnos</button><span class="eyebrow">CIDEB · ALUMNO ASIGNADO</span><h2 id="teacherStudentName"></h2><p id="teacherStudentMeta" class="muted"></p></div>
+      </div>
+
+      <div class="teacher-student-tabs" role="tablist" aria-label="Secciones del alumno">
+        <button class="active" role="tab" aria-selected="true" aria-controls="teacherTabSummary" data-teacher-tab="summary">Resumen</button>
+        <button role="tab" aria-selected="false" aria-controls="teacherTabObserve" data-teacher-tab="observe">Registrar observación</button>
+        <button role="tab" aria-selected="false" aria-controls="teacherTabHistory" data-teacher-tab="history">Mis registros</button>
+      </div>
+
+      <section class="teacher-student-tab active" id="teacherTabSummary" role="tabpanel">
+        <div id="teacherReportState"></div>
+        <div class="teacher-report-shell" id="teacherApprovedReport" hidden>
+          <section class="teacher-report-hero"><div><span class="eyebrow">INFORME DE CONTINUIDAD</span><h3>Lo más importante para acompañar al alumno</h3><p>Información aprobada por el profesional y tendencias de observaciones revisadas. Es descriptivo y no constituye diagnóstico.</p></div><span class="report-safety-pill">NO DIAGNÓSTICO</span></section>
+          <div id="teacherReportKpis" class="teacher-report-kpis"></div>
+          <div class="teacher-report-grid"><section class="report-card report-card-wide"><div class="report-card-head"><div><span class="eyebrow">PERFIL VISUAL</span><h3>Apoyo observado por área</h3></div><small>Frecuencia descriptiva · solo áreas evaluadas</small></div><div id="teacherSupportChart" class="support-chart enhanced-support-chart"></div></section><section class="report-card"><div class="report-card-head"><div><span class="eyebrow">CONTEXTO</span><h3>Dónde se registran observaciones</h3></div></div><div id="teacherContextChart" class="context-chart"></div></section><section class="report-card"><div class="report-card-head"><div><span class="eyebrow">EVOLUCIÓN</span><h3>Últimos registros</h3></div></div><div id="teacherTrendChart" class="trend-chart"></div></section></div>
+          <div id="teacherContinuity" class="teacher-continuity-sections"></div>
+        </div>
+      </section>
+
+      <section class="teacher-student-tab" id="teacherTabObserve" role="tabpanel" hidden>
+        <div class="workspace-card teacher-observation-form clean-observation-form">
+          <div class="clean-form-intro"><span class="eyebrow">NUEVA OBSERVACIÓN</span><h3>Registra un evento concreto</h3><p class="muted">Describe lo que ocurrió. Evita etiquetas, diagnósticos o interpretaciones.</p></div>
+          <div class="two-cols"><label>Fecha<input id="tObsDate" type="date"></label><label>Materia / espacio<input id="tObsSubject" placeholder="Ej. Matemáticas"></label></div>
+          <label>Contexto<select id="tObsContext"><option value="Clase">Clase</option><option value="Trabajo individual">Trabajo individual</option><option value="Trabajo en equipo">Trabajo en equipo</option><option value="Evaluación">Evaluación</option><option value="Recreo">Recreo</option><option value="Cambio de actividad">Cambio de actividad</option><option value="Otro">Otro</option></select></label>
+          <details class="observation-rating-details"><summary>Áreas observadas <small>Opcional · abrir escalas</small></summary><p class="rating-help">Selecciona solo las áreas que realmente observaste. Las áreas sin registrar no se convertirán en cero ni afectarán las gráficas.</p><div class="rating-grid" id="teacherRatings"></div></details>
+          <label>¿Qué observaste?<textarea id="tObsDescription" rows="4" placeholder="Describe una conducta observable y el contexto."></textarea></label>
+          <details class="observation-extra-details"><summary>Agregar contexto adicional <small>Antes, estrategia y resultado</small></summary><div class="form-stack"><label>¿Qué ocurrió antes?<textarea id="tObsAntecedent" rows="3"></textarea></label><label>¿Qué estrategia utilizaste?<textarea id="tObsStrategy" rows="3"></textarea></label><label>¿Qué ocurrió después?<textarea id="tObsResult" rows="3"></textarea></label><label>Comentarios adicionales<textarea id="tObsAdditional" rows="3"></textarea></label></div></details>
+          <div class="observation-submit-row"><span id="teacherDraftState" class="draft-state">Borrador local automático</span><button class="primary-btn" id="submitTeacherObservation">ENVIAR A REVISIÓN</button></div><div id="teacherObsStatus" class="status"></div>
+        </div>
+      </section>
+
+      <section class="teacher-student-tab" id="teacherTabHistory" role="tabpanel" hidden>
+        <div class="workspace-card"><span class="eyebrow">MIS REGISTROS</span><h3>Observaciones que has enviado</h3><p class="muted">Aquí solo aparecen tus propios registros para este alumno.</p><div id="teacherOwnObservations"></div></div>
+      </section>
+    </section>
+  </main>
 </div>
-<div class="workspace-card teacher-observation-form"><span class="eyebrow">NUEVA OBSERVACIÓN</span><h3>Registrar lo que ocurrió</h3><div class="two-cols"><label>Fecha<input id="tObsDate" type="date"></label><label>Materia / espacio<input id="tObsSubject" placeholder="Ej. Matemáticas"></label></div><label>Contexto<select id="tObsContext"><option value="Clase">Clase</option><option value="Trabajo individual">Trabajo individual</option><option value="Trabajo en equipo">Trabajo en equipo</option><option value="Evaluación">Evaluación</option><option value="Recreo">Recreo</option><option value="Cambio de actividad">Cambio de actividad</option><option value="Otro">Otro</option></select></label><div class="rating-grid" id="teacherRatings"></div><label>¿Qué observaste?<textarea id="tObsDescription" rows="4" placeholder="Describe conductas observables, sin interpretar ni diagnosticar."></textarea></label><label>¿Qué ocurrió antes?<textarea id="tObsAntecedent" rows="3"></textarea></label><label>¿Qué estrategia utilizaste?<textarea id="tObsStrategy" rows="3"></textarea></label><label>¿Qué ocurrió después?<textarea id="tObsResult" rows="3"></textarea></label><label>Comentarios adicionales<textarea id="tObsAdditional" rows="3"></textarea></label><button class="primary-btn" id="submitTeacherObservation">ENVIAR A REVISIÓN</button><div id="teacherObsStatus" class="status"></div></div><div class="workspace-card"><span class="eyebrow">MIS REGISTROS</span><h3>Observaciones enviadas</h3><div id="teacherOwnObservations"></div></div></section></main></div>
 <script src="/docente.js"></script></body></html>

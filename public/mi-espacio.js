@@ -1,8 +1,20 @@
 
+function clientToast(message, type='info') {
+  const region = document.querySelector('#clientToastRegion');
+  if (!region) return;
+  const item = document.createElement('div');
+  item.className = `app-toast ${type}`;
+  item.textContent = String(message || '');
+  region.appendChild(item);
+  requestAnimationFrame(() => item.classList.add('show'));
+  setTimeout(() => { item.classList.remove('show'); setTimeout(() => item.remove(), 180); }, 3600);
+}
+
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 
 let clientData = null;
+let aiMessagesRemaining = 15;
 
 function escapeHTML(value) {
   return String(value ?? "").replace(/[&<>"']/g, char => ({
@@ -12,6 +24,21 @@ function escapeHTML(value) {
     '"': "&quot;",
     "'": "&#039;"
   })[char]);
+}
+
+function formatDateOnly(value) {
+  if (!value) return "";
+  const [y,m,d] = String(value).split("-").map(Number);
+  if (!y || !m || !d) return String(value);
+  return new Intl.DateTimeFormat("es-MX", {day:"numeric",month:"short",year:"numeric"}).format(new Date(y,m-1,d,12));
+}
+
+function serviceLabel(value) {
+  return ({
+    orientacion_vocacional: "Orientación vocacional",
+    acompanamiento_personal: "Acompañamiento personal",
+    desarrollo_academico: "Desarrollo académico"
+  })[value] || String(value || "").replaceAll("_", " ");
 }
 
 async function request(path, options = {}) {
@@ -67,10 +94,10 @@ function renderClientData() {
 
   if (data.next_appointment) {
     $("#nextAppointment").textContent =
-      `${data.next_appointment.preferred_date} · ${data.next_appointment.preferred_time}`;
+      `${formatDateOnly(data.next_appointment.preferred_date)} · ${data.next_appointment.preferred_time}`;
 
     $("#nextAppointmentType").textContent =
-      data.next_appointment.service_type.replaceAll("_", " ");
+      serviceLabel(data.next_appointment.service_type);
   } else {
     $("#nextAppointment").textContent = "Por confirmar";
     $("#nextAppointmentType").textContent =
@@ -84,19 +111,20 @@ function renderClientData() {
   $("#pendingExercises").textContent = pending;
 
   const access = data.access || {};
+  const therapyEligible = !!Number(data.program?.therapy_with_alex);
 
-  if (!access.consent_confirmed) {
+  if (!therapyEligible) {
+    $("#aiAccessState").textContent = "No incluida";
+    $("#aiAccessDetail").textContent = "Esta herramienta no forma parte de tu proceso actual.";
+  } else if (!access.consent_confirmed) {
     $("#aiAccessState").textContent = "Pendiente";
-    $("#aiAccessDetail").textContent =
-      "Falta confirmar consentimiento.";
+    $("#aiAccessDetail").textContent = "Falta confirmar consentimiento.";
   } else if (!access.ai_enabled) {
     $("#aiAccessState").textContent = "No habilitada";
-    $("#aiAccessDetail").textContent =
-      "Tu profesional todavía no habilita esta herramienta.";
+    $("#aiAccessDetail").textContent = "Tu profesional todavía no habilita esta herramienta.";
   } else {
     $("#aiAccessState").textContent = "Disponible";
-    $("#aiAccessDetail").textContent =
-      "Puedes usarla desde la pestaña NORTIA Reflexión.";
+    $("#aiAccessDetail").textContent = "Puedes usarla desde la pestaña NORTIA Reflexión.";
   }
 
   renderSharedFields(data.custom_fields);
@@ -122,7 +150,7 @@ function renderFollowups(items) {
   $("#clientFollowups").innerHTML = items.length
     ? items.map(item => `
         <article class="client-followup">
-          <div class="client-followup-date">${escapeHTML(item.followup_date)}</div>
+          <div class="client-followup-date">${escapeHTML(formatDateOnly(item.followup_date))}</div>
           <div>
             <h3>${escapeHTML(item.title || "Seguimiento")}</h3>
             ${item.shared_summary ? `<p>${escapeHTML(item.shared_summary)}</p>` : ""}
@@ -163,7 +191,7 @@ function renderExercises(items) {
             <span class="exercise-status">${item.status === "done" ? "COMPLETADO" : "PENDIENTE"}</span>
             <h3>${escapeHTML(item.title)}</h3>
             ${item.description ? `<p>${escapeHTML(item.description)}</p>` : ""}
-            ${item.due_date ? `<small>Fecha sugerida: ${escapeHTML(item.due_date)}</small>` : ""}
+            ${item.due_date ? `<small>Fecha sugerida: ${escapeHTML(formatDateOnly(item.due_date))}</small>` : ""}
           </div>
           <button
             class="secondary-btn client-exercise-toggle"
@@ -177,15 +205,24 @@ function renderExercises(items) {
 
   $$(".client-exercise-toggle").forEach(button => {
     button.addEventListener("click", async () => {
-      await request("/api/client/exercise-status", {
-        method: "POST",
-        body: JSON.stringify({
-          id: button.dataset.exerciseId,
-          status: button.dataset.nextStatus
-        })
-      });
-
-      await loadClientData();
+      if (button.disabled) return;
+      button.disabled = true;
+      const oldText = button.textContent;
+      button.textContent = "GUARDANDO…";
+      try {
+        await request("/api/client/exercise-status", {
+          method: "POST",
+          body: JSON.stringify({
+            id: button.dataset.exerciseId,
+            status: button.dataset.nextStatus
+          })
+        });
+        await loadClientData();
+      } catch (error) {
+        button.disabled = false;
+        button.textContent = oldText;
+        clientToast(error.message,'error');
+      }
     });
   });
 }
@@ -218,15 +255,19 @@ async function loadAIUsage() {
 }
 function renderAIUsage(usage) {
   const used=Number(usage.used||0), limit=Number(usage.limit||15), remaining=Math.max(0,limit-used);
+  aiMessagesRemaining = remaining;
   const pct=Math.min(100,Math.round((used/Math.max(1,limit))*100));
   $("#aiUsageText").textContent=`${used} de ${limit} mensajes utilizados · ${remaining} disponibles`;
   $("#aiUsageFill").style.width=`${pct}%`;
   const b=$("#clientAISendBtn");
-  if(remaining<=0){b.disabled=true;b.textContent="LÍMITE DE HOY ALCANZADO";}
+  b.disabled=remaining<=0;
+  b.textContent=remaining<=0?"LÍMITE DE HOY ALCANZADO":"ENVIAR";
 }
 
 async function loginClient() {
-  const code = $("#clientAccessCode").value.trim();
+  const button = $("#clientLoginBtn");
+  if (button.disabled) return;
+  const code = $("#clientAccessCode").value.trim().toUpperCase();
 
   if (!code) {
     $("#clientLoginStatus").textContent =
@@ -235,6 +276,9 @@ async function loginClient() {
   }
 
   $("#clientLoginStatus").textContent = "Validando...";
+  button.disabled = true;
+  const oldText = button.textContent;
+  button.textContent = "VALIDANDO…";
 
   try {
     await request("/api/client/login", {
@@ -248,6 +292,9 @@ async function loginClient() {
     await loadClientData();
   } catch (error) {
     $("#clientLoginStatus").textContent = error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = oldText;
   }
 }
 
@@ -267,18 +314,29 @@ $("#clientLogoutBtn").addEventListener("click", async () => {
   location.reload();
 });
 
+function activateClientTab(button) {
+  $$(".client-tab").forEach(item => {
+    const active = item === button;
+    item.classList.toggle("active", active);
+    item.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  $$(".client-view").forEach(view => view.classList.remove("active"));
+  $(`#client-view-${button.dataset.clientTab}`)?.classList.add("active");
+}
+
 $$(".client-tab").forEach(button => {
-  button.addEventListener("click", () => {
-    $$(".client-tab").forEach(item =>
-      item.classList.toggle("active", item === button)
-    );
-
-    $$(".client-view").forEach(view =>
-      view.classList.remove("active")
-    );
-
-    $(`#client-view-${button.dataset.clientTab}`)
-      .classList.add("active");
+  button.addEventListener("click", () => activateClientTab(button));
+  button.addEventListener("keydown", event => {
+    if (!["ArrowLeft","ArrowRight","Home","End"].includes(event.key)) return;
+    const tabs = $$(".client-tab").filter(tab => !tab.hidden);
+    if (!tabs.length) return;
+    event.preventDefault();
+    let index = tabs.indexOf(button);
+    if (event.key === "Home") index = 0;
+    else if (event.key === "End") index = tabs.length - 1;
+    else index = (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    tabs[index].focus();
+    activateClientTab(tabs[index]);
   });
 });
 
@@ -341,8 +399,8 @@ $("#clientAISendBtn").addEventListener("click", async () => {
       error.message
     );
   } finally {
-    button.disabled = false;
-    button.textContent = oldText;
+    button.disabled = aiMessagesRemaining <= 0;
+    button.textContent = aiMessagesRemaining <= 0 ? "LÍMITE DE HOY ALCANZADO" : oldText;
   }
 });
 
@@ -362,3 +420,5 @@ async function initClient() {
 }
 
 initClient();
+
+;document.querySelectorAll('.status').forEach(el=>{el.setAttribute('role','status');el.setAttribute('aria-live','polite');});

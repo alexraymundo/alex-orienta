@@ -37,6 +37,15 @@ async function hmac(secret, value) {
     .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
+function constantTimeEqual(a, b) {
+  const left = encoder.encode(String(a || ""));
+  const right = encoder.encode(String(b || ""));
+  const length = Math.max(left.length, right.length);
+  let diff = left.length ^ right.length;
+  for (let i = 0; i < length; i++) diff |= (left[i] || 0) ^ (right[i] || 0);
+  return diff === 0;
+}
+
 async function createSessionToken(env) {
   const expiresAt = String(Date.now() + 8 * 60 * 60 * 1000);
   return `${expiresAt}.${await hmac(env.SESSION_SECRET, expiresAt)}`;
@@ -49,7 +58,7 @@ async function hasValidAdminSession(req, env) {
   const [expiresAt, signature] = match[1].split(".");
   if (!expiresAt || !signature || Number(expiresAt) <= Date.now()) return false;
   const expected = await hmac(env.SESSION_SECRET, expiresAt);
-  return signature === expected;
+  return constantTimeEqual(signature, expected);
 }
 
 async function requireAdmin(req, env) {
@@ -176,6 +185,7 @@ async function recordLoginFailure(req, env, scope) {
       updated_at=excluded.updated_at
   `).bind(key, scope, count, now, blockedUntil, now).run();
 
+  await env.DB.prepare(`DELETE FROM security_login_attempts WHERE datetime(updated_at) < datetime('now','-2 days')`).run();
   return { count, blocked_until: blockedUntil };
 }
 
@@ -210,10 +220,13 @@ function addSecurityHeaders(response, isApi = false) {
   headers.set("Referrer-Policy", "same-origin");
   headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
   headers.set("X-Frame-Options", "DENY");
+  headers.set("Cross-Origin-Opener-Policy", "same-origin");
+  headers.set("Cross-Origin-Resource-Policy", "same-origin");
+  headers.set("X-Permitted-Cross-Domain-Policies", "none");
   headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   headers.set(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests"
   );
   if (isApi) headers.set("Cache-Control", "no-store");
   return new Response(response.body, {
@@ -259,7 +272,7 @@ async function getClientSession(req, env) {
   const payload = `${personId}.${expiresAt}`;
   const expected = await hmac(env.SESSION_SECRET, payload);
 
-  if (signature !== expected) return null;
+  if (!constantTimeEqual(signature, expected)) return null;
 
   return { personId, expiresAt: Number(expiresAt) };
 }
@@ -340,12 +353,12 @@ async function getClientVisibleData(env, personId) {
   const nextAppointment = await env.DB.prepare(`
     SELECT preferred_date, preferred_time, service_type, status
     FROM appointments
-    WHERE client_name = ?
+    WHERE person_id = ?
       AND status='confirmed'
       AND preferred_date >= date('now')
     ORDER BY preferred_date ASC, preferred_time ASC
     LIMIT 1
-  `).bind(person.full_name).first();
+  `).bind(personId).first();
 
   const program = await getPersonProgram(env, personId);
 
@@ -418,6 +431,24 @@ function nortiaLocalDate() {
   }).formatToParts(new Date());
   const map = Object.fromEntries(parts.map(x => [x.type, x.value]));
   return `${map.year}-${map.month}-${map.day}`;
+}
+
+function isValidDateOnly(value) {
+  const text = String(value || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  const [y,m,d] = text.split("-").map(Number);
+  const test = new Date(Date.UTC(y, m - 1, d));
+  return test.getUTCFullYear() === y && test.getUTCMonth() === m - 1 && test.getUTCDate() === d;
+}
+
+function isValidTimeOnly(value) {
+  return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value || ''));
+}
+
+function isReasonableEmail(value) {
+  const text = String(value || '').trim();
+  if (!text) return true;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text) && text.length <= 160;
 }
 
 
@@ -594,8 +625,8 @@ async function createNotification(env, {
   const emailResult = await sendAlexEmail(
     env,
     emailSubject || `NORTIA · ${title}`,
-    emailText || message,
-    emailHTML
+    `Hay una nueva actividad en NORTIA que requiere tu atención.\n\nTipo: ${safeText(type, 60)}\n\nIngresa al Panel Profesional para revisar los detalles.`,
+    ""
   );
 
   await env.DB.prepare(`
@@ -615,22 +646,117 @@ async function createNotification(env, {
 }
 
 
-const TEACHER_AGREEMENT_VERSION = "1.0";
-const FAMILY_AGREEMENT_VERSION = "1.0";
+const TEACHER_AGREEMENT_VERSION = "2.0";
+const FAMILY_AGREEMENT_VERSION = "2.0";
+const PUBLIC_PRIVACY_VERSION = "2.0";
+const AI_CONSENT_VERSION = "2.0";
+
+let v82SchemaPromise = null;
+async function ensureColumn(env, tableName, columnName, definition) {
+  const { results } = await env.DB.prepare(`PRAGMA table_info(${tableName})`).all();
+  if (!(results || []).some(row => row.name === columnName)) {
+    await env.DB.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`).run();
+  }
+}
+
+async function ensureV82Tables(env) {
+  if (v82SchemaPromise) return v82SchemaPromise;
+  v82SchemaPromise = (async () => {
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS school_continuity_drafts (
+      person_id TEXT PRIMARY KEY,
+      general_description TEXT,
+      strengths TEXT,
+      support_needs TEXT,
+      strategies TEXT,
+      watch_items TEXT,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE
+    )`).run();
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS security_action_limits (
+      action_key TEXT PRIMARY KEY,
+      action_scope TEXT NOT NULL,
+      window_started_at TEXT NOT NULL,
+      request_count INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL
+    )`).run();
+    await ensureColumn(env, 'appointments', 'person_id', 'TEXT');
+    await ensureColumn(env, 'appointments', 'privacy_consent_version', 'TEXT');
+    await ensureColumn(env, 'appointments', 'privacy_accepted_at', 'TEXT');
+    await ensureColumn(env, 'client_access', 'consent_version', 'TEXT');
+    await ensureColumn(env, 'client_access', 'consent_confirmed_at', 'TEXT');
+    await ensureColumn(env, 'client_access', 'consent_confirmed_by', 'TEXT');
+    await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_appointments_person_v82 ON appointments(person_id)`).run();
+    await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_continuity_drafts_updated_v82 ON school_continuity_drafts(updated_at)`).run();
+  })();
+  try {
+    return await v82SchemaPromise;
+  } catch (error) {
+    v82SchemaPromise = null;
+    throw error;
+  }
+}
+
+async function enforceActionRateLimit(req, env, scope, limit = 6, windowSeconds = 1800) {
+  await ensureV82Tables(env);
+  const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
+  const key = await sha256(`${scope}|${ip}`);
+  const now = Date.now();
+  const row = await env.DB.prepare(`SELECT window_started_at,request_count FROM security_action_limits WHERE action_key=?`).bind(key).first();
+  let started = row?.window_started_at ? Date.parse(row.window_started_at) : 0;
+  let count = Number(row?.request_count || 0);
+  if (!started || now - started >= windowSeconds * 1000) {
+    started = now;
+    count = 0;
+  }
+  if (count >= limit) {
+    const retry = Math.max(1, Math.ceil((started + windowSeconds * 1000 - now) / 1000));
+    return json({ error: 'Demasiadas solicitudes. Intenta nuevamente más tarde.' }, 429, { 'retry-after': String(retry) });
+  }
+  count += 1;
+  const iso = new Date(started).toISOString();
+  await env.DB.prepare(`INSERT INTO security_action_limits (action_key,action_scope,window_started_at,request_count,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(action_key) DO UPDATE SET action_scope=excluded.action_scope,window_started_at=excluded.window_started_at,request_count=excluded.request_count,updated_at=excluded.updated_at`)
+    .bind(key, scope, iso, count, nowISO()).run();
+  await env.DB.prepare(`DELETE FROM security_action_limits WHERE datetime(updated_at) < datetime('now','-2 days')`).run();
+  return null;
+}
+
+async function verifyTurnstile(req, env, token) {
+  const hasSecret = Boolean(env.TURNSTILE_SECRET_KEY);
+  const hasSite = Boolean(env.TURNSTILE_SITE_KEY);
+  if (!hasSecret && !hasSite) return { ok: true, skipped: true };
+  if (hasSecret !== hasSite) return { ok: false, configuration_error: true, error: 'La verificación anti-bot está configurada de forma incompleta.' };
+  if (!token) return { ok: false, error: 'Completa la verificación de seguridad.' };
+  const body = new FormData();
+  body.append('secret', env.TURNSTILE_SECRET_KEY);
+  body.append('response', token);
+  const ip = req.headers.get('CF-Connecting-IP');
+  if (ip) body.append('remoteip', ip);
+  try {
+    const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', { method: 'POST', body });
+    const data = await response.json();
+    return data?.success ? { ok: true } : { ok: false, error: 'No fue posible validar la verificación de seguridad.' };
+  } catch {
+    return { ok: false, error: 'No fue posible validar la verificación de seguridad.' };
+  }
+}
+
 
 async function ensureSchoolModuleTables(env) {
   const statements = [
     `CREATE TABLE IF NOT EXISTS person_programs (person_id TEXT PRIMARY KEY, therapy_with_alex INTEGER NOT NULL DEFAULT 0, school_followup INTEGER NOT NULL DEFAULT 0, school_name TEXT, grade_level TEXT, school_year TEXT, updated_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
     `CREATE TABLE IF NOT EXISTS teachers (id TEXT PRIMARY KEY, full_name TEXT NOT NULL, email TEXT, school_name TEXT, access_hash TEXT NOT NULL, access_hint TEXT, active INTEGER NOT NULL DEFAULT 1, agreement_version TEXT NOT NULL DEFAULT '1.0', agreement_accepted_at TEXT, agreement_signed_name TEXT, last_login_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS teacher_assignments (teacher_id TEXT NOT NULL, person_id TEXT NOT NULL, school_year TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, PRIMARY KEY(teacher_id, person_id, school_year), FOREIGN KEY(teacher_id) REFERENCES teachers(id) ON DELETE CASCADE, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
-    `CREATE TABLE IF NOT EXISTS teacher_observations (id TEXT PRIMARY KEY, teacher_id TEXT NOT NULL, person_id TEXT NOT NULL, observation_date TEXT NOT NULL, subject TEXT, context TEXT, attention_support INTEGER, instructions_support INTEGER, organization_support INTEGER, peer_support INTEGER, frustration_support INTEGER, transitions_support INTEGER, autonomy_support INTEGER, help_seeking_support INTEGER, description TEXT NOT NULL, antecedent TEXT, strategy_used TEXT, result_text TEXT, additional_comments TEXT, status TEXT NOT NULL DEFAULT 'submitted', professional_comment TEXT, reviewed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(teacher_id) REFERENCES teachers(id) ON DELETE CASCADE, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
+    `CREATE TABLE IF NOT EXISTS teacher_observations (id TEXT PRIMARY KEY, teacher_id TEXT NOT NULL, person_id TEXT NOT NULL, observation_date TEXT NOT NULL, subject TEXT, context TEXT, attention_support INTEGER, instructions_support INTEGER, organization_support INTEGER, peer_support INTEGER, frustration_support INTEGER, transitions_support INTEGER, autonomy_support INTEGER, help_seeking_support INTEGER, description TEXT NOT NULL, antecedent TEXT, strategy_used TEXT, result_text TEXT, additional_comments TEXT, status TEXT NOT NULL DEFAULT 'submitted', private_note TEXT, professional_comment TEXT, reviewed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(teacher_id) REFERENCES teachers(id) ON DELETE CASCADE, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
     `CREATE TABLE IF NOT EXISTS school_continuity (person_id TEXT PRIMARY KEY, general_description TEXT, strengths TEXT, support_needs TEXT, strategies TEXT, watch_items TEXT, approved_at TEXT, updated_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
     `CREATE TABLE IF NOT EXISTS guardians (id TEXT PRIMARY KEY, person_id TEXT NOT NULL, full_name TEXT NOT NULL, relationship TEXT, email TEXT, access_hash TEXT NOT NULL, access_hint TEXT, active INTEGER NOT NULL DEFAULT 1, agreement_version TEXT NOT NULL DEFAULT '1.0', agreement_accepted_at TEXT, agreement_signed_name TEXT, last_login_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
     `CREATE TABLE IF NOT EXISTS family_profiles (person_id TEXT PRIMARY KEY, summary TEXT, strengths TEXT, current_goals TEXT, recommendations_home TEXT, updated_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
-    `CREATE TABLE IF NOT EXISTS family_observations (id TEXT PRIMARY KEY, guardian_id TEXT NOT NULL, person_id TEXT NOT NULL, observation_date TEXT NOT NULL, context TEXT, observation_text TEXT NOT NULL, what_helped TEXT, questions TEXT, status TEXT NOT NULL DEFAULT 'submitted', professional_comment TEXT, reviewed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(guardian_id) REFERENCES guardians(id) ON DELETE CASCADE, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
+    `CREATE TABLE IF NOT EXISTS family_observations (id TEXT PRIMARY KEY, guardian_id TEXT NOT NULL, person_id TEXT NOT NULL, observation_date TEXT NOT NULL, context TEXT, observation_text TEXT NOT NULL, what_helped TEXT, questions TEXT, status TEXT NOT NULL DEFAULT 'submitted', private_note TEXT, professional_comment TEXT, reviewed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(guardian_id) REFERENCES guardians(id) ON DELETE CASCADE, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
     `CREATE TABLE IF NOT EXISTS audit_log (id TEXT PRIMARY KEY, actor_role TEXT NOT NULL, actor_id TEXT, action TEXT NOT NULL, person_id TEXT, detail TEXT, created_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE SET NULL)`
   ];
   for (const sql of statements) await env.DB.prepare(sql).run();
+  // Notas internas separadas de cualquier respuesta visible para docentes o familias.
+  await ensureColumn(env, "teacher_observations", "private_note", "TEXT");
+  await ensureColumn(env, "family_observations", "private_note", "TEXT");
 }
 
 
@@ -675,7 +801,8 @@ async function ensureCidebDirectoryTables(env) {
       created_at TEXT NOT NULL,
       FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE
     )`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS idx_school_continuity_versions_unique ON school_continuity_versions(person_id, version_number)`
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_school_continuity_versions_unique ON school_continuity_versions(person_id, version_number)`,
+    `CREATE TABLE IF NOT EXISTS school_continuity_drafts (person_id TEXT PRIMARY KEY, general_description TEXT, strengths TEXT, support_needs TEXT, strategies TEXT, watch_items TEXT, updated_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`
   ];
 
   for (const sql of statements) await env.DB.prepare(sql).run();
@@ -757,7 +884,7 @@ function normalizeConfirmation(value){return safeText(value,300).replace(/\s+/g,
 async function getInstitutionPeople(env,institution='CIDEB'){
   await ensureSchoolModuleTables(env); await ensureDataManagementTables(env);
   const needle=`%${String(institution||'CIDEB').toLowerCase()}%`;
-  const {results}=await env.DB.prepare(`SELECT p.id,p.full_name,p.status,COALESCE(pp.therapy_with_alex,0) AS therapy_with_alex,COALESCE(pp.school_followup,0) AS school_followup,COALESCE(pp.school_name,'') AS school_name,COALESCE(dc.context_type,'private') AS context_type,COALESCE(dc.institution_name,'') AS institution_name FROM people p LEFT JOIN person_programs pp ON pp.person_id=p.id LEFT JOIN person_data_context dc ON dc.person_id=p.id WHERE LOWER(COALESCE(pp.school_name,'')) LIKE ? OR LOWER(COALESCE(dc.institution_name,'')) LIKE ? OR COALESCE(dc.context_type,'')='cideb' ORDER BY p.full_name`).bind(needle,needle).all();
+  const {results}=await env.DB.prepare(`SELECT p.id,p.full_name,p.status,COALESCE(pp.therapy_with_alex,0) AS therapy_with_alex,COALESCE(pp.school_followup,0) AS school_followup,COALESCE(pp.school_name,'') AS school_name,COALESCE(dc.context_type,'private') AS context_type,COALESCE(dc.institution_name,'') AS institution_name FROM people p LEFT JOIN person_programs pp ON pp.person_id=p.id LEFT JOIN person_data_context dc ON dc.person_id=p.id WHERE LOWER(COALESCE(pp.school_name,'')) LIKE ? OR LOWER(COALESCE(dc.institution_name,'')) LIKE ? OR COALESCE(dc.context_type,'') IN ('cideb','mixed') ORDER BY p.full_name`).bind(needle,needle).all();
   return results||[];
 }
 async function institutionPreview(env,institution='CIDEB'){
@@ -768,7 +895,7 @@ async function institutionPreview(env,institution='CIDEB'){
   const [a,o,c,f]=await Promise.all([
     env.DB.prepare(`SELECT COUNT(*) AS count FROM teacher_assignments WHERE person_id IN (${marks}) AND active=1`).bind(...ids).first(),
     env.DB.prepare(`SELECT COUNT(*) AS count FROM teacher_observations WHERE person_id IN (${marks})`).bind(...ids).first(),
-    env.DB.prepare(`SELECT COUNT(*) AS count FROM school_continuity WHERE person_id IN (${marks})`).bind(...ids).first(),
+    env.DB.prepare(`SELECT COUNT(*) AS count FROM school_continuity WHERE person_id IN (${marks}) AND approved_at IS NOT NULL`).bind(...ids).first(),
     env.DB.prepare(`SELECT COUNT(*) AS count FROM guardians WHERE person_id IN (${marks}) AND active=1`).bind(...ids).first()
   ]);
   return{institution,people:people.length,school_only:people.filter(x=>!Number(x.therapy_with_alex)).length,private_therapy_preserved:people.filter(x=>Number(x.therapy_with_alex)).length,active_teachers:Number(tr?.count||0),teacher_assignments:Number(a?.count||0),teacher_observations:Number(o?.count||0),continuity_records:Number(c?.count||0),family_accesses:Number(f?.count||0)};
@@ -797,7 +924,7 @@ async function getSignedRoleSession(req, env, role) {
   const [actorId, expiresAt, signature] = match[1].split(".");
   if (!actorId || !expiresAt || !signature || Number(expiresAt) <= Date.now()) return null;
   const expected = await hmac(env.SESSION_SECRET, `${role}.${actorId}.${expiresAt}`);
-  if (signature !== expected) return null;
+  if (!constantTimeEqual(signature, expected)) return null;
   return { actorId, expiresAt: Number(expiresAt) };
 }
 
@@ -835,21 +962,39 @@ async function teacherAssignment(env, teacherId, personId) {
 async function getSchoolSnapshot(env, personId, reviewedOnly = true) {
   await ensureSchoolModuleTables(env);
   const statusClause = reviewedOnly ? "AND status='reviewed'" : "";
+  const fields = {
+    attention: 'attention_support',
+    instructions: 'instructions_support',
+    organization: 'organization_support',
+    peers: 'peer_support',
+    frustration: 'frustration_support',
+    transitions: 'transitions_support',
+    autonomy: 'autonomy_support',
+    help_seeking: 'help_seeking_support'
+  };
   const stats = await env.DB.prepare(`
     SELECT COUNT(*) AS observation_count,
-      AVG(attention_support) AS attention,
-      AVG(instructions_support) AS instructions,
-      AVG(organization_support) AS organization,
-      AVG(peer_support) AS peers,
-      AVG(frustration_support) AS frustration,
-      AVG(transitions_support) AS transitions,
-      AVG(autonomy_support) AS autonomy,
-      AVG(help_seeking_support) AS help_seeking,
       MAX(COALESCE(reviewed_at, updated_at, created_at)) AS last_reviewed_at
     FROM teacher_observations
     WHERE person_id=? ${statusClause}
   `).bind(personId).first();
-
+  const distributionSelect = Object.entries(fields).flatMap(([key, field]) => [
+    `SUM(CASE WHEN ${field} IS NOT NULL THEN 1 ELSE 0 END) AS ${key}_n`,
+    `SUM(CASE WHEN ${field}=0 THEN 1 ELSE 0 END) AS ${key}_0`,
+    `SUM(CASE WHEN ${field}=1 THEN 1 ELSE 0 END) AS ${key}_1`,
+    `SUM(CASE WHEN ${field}=2 THEN 1 ELSE 0 END) AS ${key}_2`,
+    `SUM(CASE WHEN ${field}=3 THEN 1 ELSE 0 END) AS ${key}_3`
+  ]).join(', ');
+  const distRow = await env.DB.prepare(`SELECT ${distributionSelect} FROM teacher_observations WHERE person_id=? ${statusClause}`).bind(personId).first();
+  const distribution = {};
+  for (const key of Object.keys(fields)) {
+    const n = Number(distRow?.[`${key}_n`] || 0);
+    const c0 = Number(distRow?.[`${key}_0`] || 0);
+    const c1 = Number(distRow?.[`${key}_1`] || 0);
+    const c2 = Number(distRow?.[`${key}_2`] || 0);
+    const c3 = Number(distRow?.[`${key}_3`] || 0);
+    distribution[key] = { n, counts: [c0,c1,c2,c3], higher_support_pct: n ? Math.round(((c2+c3)/n)*100) : null };
+  }
   const { results: contexts } = await env.DB.prepare(`
     SELECT COALESCE(NULLIF(context,''),'Sin contexto') AS context, COUNT(*) AS count
     FROM teacher_observations
@@ -858,32 +1003,19 @@ async function getSchoolSnapshot(env, personId, reviewedOnly = true) {
     ORDER BY count DESC, context ASC
     LIMIT 8
   `).bind(personId).all();
-
   const { results: trendDesc } = await env.DB.prepare(`
-    SELECT observation_date,
-      attention_support,
-      instructions_support,
-      organization_support,
-      peer_support,
-      frustration_support,
-      transitions_support,
-      autonomy_support,
-      help_seeking_support
+    SELECT observation_date, context,
+      attention_support,instructions_support,organization_support,peer_support,
+      frustration_support,transitions_support,autonomy_support,help_seeking_support
     FROM teacher_observations
     WHERE person_id=? ${statusClause}
     ORDER BY observation_date DESC, created_at DESC
     LIMIT 10
   `).bind(personId).all();
-
-  const clean = {};
-  for (const key of ["attention","instructions","organization","peers","frustration","transitions","autonomy","help_seeking"]) {
-    clean[key] = stats?.[key] == null ? null : Math.round(Number(stats[key]) * 10) / 10;
-  }
-
   return {
     observation_count: Number(stats?.observation_count || 0),
     last_reviewed_at: stats?.last_reviewed_at || null,
-    support: clean,
+    distribution,
     contexts: contexts || [],
     trend: (trendDesc || []).reverse()
   };
@@ -891,6 +1023,26 @@ async function getSchoolSnapshot(env, personId, reviewedOnly = true) {
 
 async function api(req, env, url) {
   const path = url.pathname;
+  await ensureV82Tables(env);
+
+  if (path === "/api/security/public-config" && req.method === "GET") {
+    const turnstileEnabled = Boolean(env.TURNSTILE_SECRET_KEY && env.TURNSTILE_SITE_KEY);
+    const turnstileMisconfigured = Boolean(env.TURNSTILE_SECRET_KEY) !== Boolean(env.TURNSTILE_SITE_KEY);
+    return json({ turnstile_site_key: turnstileEnabled ? env.TURNSTILE_SITE_KEY : '', turnstile_enabled: turnstileEnabled, turnstile_misconfigured: turnstileMisconfigured, privacy_version: PUBLIC_PRIVACY_VERSION });
+  }
+
+  if (path === "/api/admin/security/status" && req.method === "GET") {
+    const auth = await requireAdmin(req, env);
+    if (auth) return auth;
+    return json({
+      turnstile_configured: Boolean(env.TURNSTILE_SECRET_KEY && env.TURNSTILE_SITE_KEY),
+      turnstile_misconfigured: Boolean(env.TURNSTILE_SECRET_KEY) !== Boolean(env.TURNSTILE_SITE_KEY),
+      session_secret_configured: Boolean(env.SESSION_SECRET),
+      admin_password_configured: Boolean(env.ADMIN_PASSWORD),
+      legal_texts_reviewed: String(env.LEGAL_TEXTS_REVIEWED || "").toLowerCase() === "true",
+      cloudflare_access: "external_check_required"
+    });
+  }
 
   if (path === "/api/admin/login" && req.method === "POST") {
     const limited = await enforceLoginRateLimit(req, env, "admin");
@@ -900,7 +1052,7 @@ async function api(req, env, url) {
     if (!env.ADMIN_PASSWORD || !env.SESSION_SECRET) {
       return json({ error: "La configuración de seguridad del administrador está incompleta." }, 500);
     }
-    if (safeText(body.password, 200) !== env.ADMIN_PASSWORD) {
+    if (!constantTimeEqual(safeText(body.password, 200), env.ADMIN_PASSWORD)) {
       await recordLoginFailure(req, env, "admin");
       return json({ error: "Credenciales incorrectas" }, 401);
     }
@@ -1380,10 +1532,13 @@ Nunca tienes acceso a las notas privadas de Alex.
     if (!(await teacherAssignment(env, session.actorId, personId))) return json({ error: "No tienes acceso a este alumno." }, 403);
     const description = safeText(b.description,5000);
     if (!description) return json({ error: "Describe qué observaste." },400);
-    const clamp = v => { const n=Number(v); return Number.isFinite(n) ? Math.max(0,Math.min(3,Math.round(n))) : null; };
+    const observationDate = safeText(b.observation_date,20) || nortiaLocalDate();
+    if (!isValidDateOnly(observationDate)) return json({ error: "Selecciona una fecha válida para la observación." },400);
+    if (observationDate > nortiaLocalDate()) return json({ error: "La fecha de observación no puede ser futura." },400);
+    const clamp = v => { if (v == null || v === "") return null; const n=Number(v); return Number.isFinite(n) ? Math.max(0,Math.min(3,Math.round(n))) : null; };
     const id=makeId("tobs"), now=nowISO();
     await env.DB.prepare(`INSERT INTO teacher_observations (id,teacher_id,person_id,observation_date,subject,context,attention_support,instructions_support,organization_support,peer_support,frustration_support,transitions_support,autonomy_support,help_seeking_support,description,antecedent,strategy_used,result_text,additional_comments,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'submitted',?,?)`)
-      .bind(id,session.actorId,personId,safeText(b.observation_date,20)||nortiaLocalDate(),safeText(b.subject,120),safeText(b.context,120),clamp(b.attention_support),clamp(b.instructions_support),clamp(b.organization_support),clamp(b.peer_support),clamp(b.frustration_support),clamp(b.transitions_support),clamp(b.autonomy_support),clamp(b.help_seeking_support),description,safeText(b.antecedent,3000),safeText(b.strategy_used,3000),safeText(b.result_text,3000),safeText(b.additional_comments,3000),now,now).run();
+      .bind(id,session.actorId,personId,observationDate,safeText(b.subject,120),safeText(b.context,120),clamp(b.attention_support),clamp(b.instructions_support),clamp(b.organization_support),clamp(b.peer_support),clamp(b.frustration_support),clamp(b.transitions_support),clamp(b.autonomy_support),clamp(b.help_seeking_support),description,safeText(b.antecedent,3000),safeText(b.strategy_used,3000),safeText(b.result_text,3000),safeText(b.additional_comments,3000),now,now).run();
     const person = await env.DB.prepare(`SELECT full_name FROM people WHERE id=?`).bind(personId).first();
     await logAudit(env,"teacher",session.actorId,"submit_observation",personId,"Registro docente enviado a revisión");
     await createNotification(env,{type:"teacher_observation",personId,title:"Nueva observación docente",message:`${teacher.full_name} registró una observación de ${person?.full_name || "un alumno"}.`,priority:"normal",emailSubject:"NORTIA · Nueva observación docente",emailText:`${teacher.full_name} registró una nueva observación escolar para ${person?.full_name || "un alumno"}.\n\nIngresa al Panel Profesional para revisarla.`});
@@ -1449,8 +1604,11 @@ Nunca tienes acceso a las notas privadas de Alex.
     const guardian=await env.DB.prepare(`SELECT * FROM guardians WHERE id=? AND active=1`).bind(session.actorId).first();
     if(!guardian?.agreement_accepted_at||guardian.agreement_version!==FAMILY_AGREEMENT_VERSION) return json({error:"Primero acepta el aviso y compromiso de privacidad."},403);
     const b=await parseBody(req), observation=safeText(b.observation_text,5000); if(!observation) return json({error:"Escribe la observación que quieres compartir."},400);
+    const observationDate=safeText(b.observation_date,20)||nortiaLocalDate();
+    if(!isValidDateOnly(observationDate)) return json({error:"Selecciona una fecha válida para la observación."},400);
+    if(observationDate>nortiaLocalDate()) return json({error:"La fecha de observación no puede ser futura."},400);
     const id=makeId("fobs"),now=nowISO();
-    await env.DB.prepare(`INSERT INTO family_observations (id,guardian_id,person_id,observation_date,context,observation_text,what_helped,questions,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,'submitted',?,?)`).bind(id,guardian.id,guardian.person_id,safeText(b.observation_date,20)||nortiaLocalDate(),safeText(b.context,160),observation,safeText(b.what_helped,3000),safeText(b.questions,3000),now,now).run();
+    await env.DB.prepare(`INSERT INTO family_observations (id,guardian_id,person_id,observation_date,context,observation_text,what_helped,questions,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,'submitted',?,?)`).bind(id,guardian.id,guardian.person_id,observationDate,safeText(b.context,160),observation,safeText(b.what_helped,3000),safeText(b.questions,3000),now,now).run();
     const person=await env.DB.prepare(`SELECT full_name FROM people WHERE id=?`).bind(guardian.person_id).first();
     await logAudit(env,"family",guardian.id,"submit_family_observation",guardian.person_id,"Observación familiar enviada a revisión");
     await createNotification(env,{type:"family_observation",personId:guardian.person_id,title:"Nueva observación familiar",message:`${guardian.full_name} compartió una observación sobre ${person?.full_name || "un menor"}.`,priority:"normal",emailSubject:"NORTIA · Nueva observación familiar",emailText:`${guardian.full_name} compartió una nueva observación familiar sobre ${person?.full_name || "un menor"}.\n\nIngresa al Panel Profesional para revisarla.`});
@@ -1458,54 +1616,64 @@ Nunca tienes acceso a las notas privadas de Alex.
   }
 
   if (path === "/api/appointments" && req.method === "POST") {
+    const limited = await enforceActionRateLimit(req, env, 'public_appointment', 6, 1800);
+    if (limited) return limited;
     const b = await parseBody(req);
+    if (!(b.privacy_consent === true || b.privacy_consent === 'yes' || b.privacy_consent === 'on')) {
+      return json({ error: 'Debes aceptar el aviso de privacidad para enviar la solicitud.' }, 400);
+    }
+    const turnstile = await verifyTurnstile(req, env, safeText(b.turnstile_token, 3000));
+    if (!turnstile.ok) return json({ error: turnstile.error }, turnstile.configuration_error ? 503 : 400);
     const name = safeText(b.client_name, 120);
     const date = safeText(b.preferred_date, 20);
     const time = safeText(b.preferred_time, 20);
-
-    if (!name || !date || !time) {
-      return json({ error: "Nombre, fecha y horario son obligatorios." }, 400);
-    }
-
+    if (!name || !date || !time) return json({ error: "Nombre, fecha y horario son obligatorios." }, 400);
+    if (!isValidTimeOnly(time)) return json({ error: "Selecciona un horario válido." }, 400);
+    const allowedServices = new Set(['orientacion_vocacional','acompanamiento_personal','desarrollo_academico']);
+    const serviceType = safeText(b.service_type,80) || 'orientacion_vocacional';
+    if (!allowedServices.has(serviceType)) return json({ error: "Selecciona un tipo de acompañamiento válido." }, 400);
     const age = b.age === "" || b.age == null ? null : Number(b.age);
-    const isMinor = age !== null && Number.isFinite(age) && age < 18 ? 1 : 0;
-
-    if (isMinor && !safeText(b.guardian_name, 120)) {
-      return json({ error: "Para una persona menor de edad necesitamos el nombre del padre, madre o tutor." }, 400);
+    if (age === null || !Number.isFinite(age) || age < 8 || age > 99) return json({ error: "Indica una edad válida." }, 400);
+    if (!isValidDateOnly(date)) return json({ error: "Selecciona una fecha válida." }, 400);
+    const isMinor = age < 18 ? 1 : 0;
+    if (isMinor && !safeText(b.guardian_name, 120)) return json({ error: "Para una persona menor de edad necesitamos el nombre del padre, madre o tutor." }, 400);
+    const email = safeText(b.client_email, 160).toLowerCase();
+    const phone = safeText(b.client_phone, 40);
+    const guardianEmail = safeText(b.guardian_email, 160).toLowerCase();
+    const guardianPhone = safeText(b.guardian_phone, 40);
+    if (!isReasonableEmail(email) || !isReasonableEmail(guardianEmail)) return json({ error: "Revisa el formato del correo electrónico." }, 400);
+    if (date < nortiaLocalDate()) return json({ error: "Selecciona una fecha de hoy en adelante." }, 400);
+    if (isMinor && !guardianEmail && !guardianPhone) return json({ error: "Para una persona menor de edad necesitamos correo o teléfono del padre, madre o tutor." }, 400);
+    if (!isMinor && !email && !phone) return json({ error: "Agrega un correo o teléfono para poder confirmar la sesión." }, 400);
+    let personId = null;
+    // Solo se vincula automáticamente por correo único. Los teléfonos pueden ser compartidos por familias.
+    if (email) {
+      const { results } = await env.DB.prepare(`SELECT id FROM people WHERE status='active' AND LOWER(TRIM(COALESCE(email,'')))=? LIMIT 2`).bind(email).all();
+      if ((results || []).length === 1) personId = results[0].id;
     }
-
     const id = makeId("appt");
     const now = nowISO();
-
     await env.DB.prepare(`
       INSERT INTO appointments (
-        id, client_name, age, client_email, client_phone,
+        id, person_id, client_name, age, client_email, client_phone,
         is_minor, guardian_name, guardian_email, guardian_phone,
         service_type, reason_summary, preferred_date, preferred_time,
-        status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?)
+        status, privacy_consent_version, privacy_accepted_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?, ?, ?)
     `).bind(
-      id, name, Number.isFinite(age) ? age : null,
-      safeText(b.client_email, 160), safeText(b.client_phone, 40), isMinor,
-      safeText(b.guardian_name, 120), safeText(b.guardian_email, 160),
-      safeText(b.guardian_phone, 40), safeText(b.service_type, 80) || "orientacion_vocacional",
-      safeText(b.reason_summary, 1500), date, time, now, now
+      id, personId, name, Number.isFinite(age) ? age : null,
+      email, phone, isMinor,
+      safeText(b.guardian_name, 120), guardianEmail, guardianPhone,
+      serviceType, safeText(b.reason_summary, 1500), date, time,
+      PUBLIC_PRIVACY_VERSION, now, now, now
     ).run();
-
     await createNotification(env, {
-      type: "appointment",
+      type: "appointment", personId,
       title: "Nueva solicitud de cita",
       message: `${name} solicitó una sesión para ${date} a las ${time}.`,
       priority: "normal",
-      emailSubject: "NORTIA · Nueva solicitud de cita",
-      emailText:
-        `Se recibió una nueva solicitud de cita.\n\n` +
-        `Persona: ${name}\n` +
-        `Fecha solicitada: ${date}\n` +
-        `Hora solicitada: ${time}\n\n` +
-        `Ingresa al Panel Profesional de NORTIA para revisarla.`
+      emailSubject: "NORTIA · Nueva solicitud de cita"
     });
-
     return json({ ok: true, appointment_id: id });
   }
 
@@ -1636,14 +1804,14 @@ Nunca tienes acceso a las notas privadas de Alex.
   if (path === "/api/admin/person/delete" && req.method === "POST") {
     await ensureSchoolModuleTables(env); await ensureDataManagementTables(env); const b=await parseBody(req),personId=safeText(b.person_id,120); const person=await env.DB.prepare(`SELECT id,full_name FROM people WHERE id=?`).bind(personId).first(); if(!person)return json({error:"Persona no encontrada."},404);
     if(normalizeConfirmation(b.confirmation)!==normalizeConfirmation(`ELIMINAR ${person.full_name}`))return json({error:`Para confirmar escribe exactamente: ELIMINAR ${person.full_name}`},400);
-    await env.DB.batch([env.DB.prepare(`DELETE FROM notifications WHERE person_id=?`).bind(personId),env.DB.prepare(`DELETE FROM audit_log WHERE person_id=?`).bind(personId)]); await env.DB.prepare(`DELETE FROM people WHERE id=?`).bind(personId).run(); await logAudit(env,"admin","alex","delete_person_definitive",null,"Se eliminó definitivamente un expediente individual."); return json({ok:true,deleted:true,message:"Expediente eliminado definitivamente. Las solicitudes de cita independientes no enlazadas por ID no se eliminan automáticamente."});
+    await env.DB.batch([env.DB.prepare(`DELETE FROM notifications WHERE person_id=?`).bind(personId),env.DB.prepare(`DELETE FROM audit_log WHERE person_id=?`).bind(personId),env.DB.prepare(`DELETE FROM appointments WHERE person_id=?`).bind(personId)]); await env.DB.prepare(`DELETE FROM people WHERE id=?`).bind(personId).run(); await logAudit(env,"admin","alex","delete_person_definitive",null,"Se eliminó definitivamente un expediente individual y sus citas vinculadas."); return json({ok:true,deleted:true,message:"Expediente eliminado definitivamente junto con sus citas vinculadas por ID."});
   }
   if (path === "/api/admin/institution/preview" && req.method === "GET") { const institution=safeText(url.searchParams.get("institution")||"CIDEB",120); return json(await institutionPreview(env,institution)); }
   if (path === "/api/admin/institution/close" && req.method === "POST") {
     await ensureSchoolModuleTables(env); await ensureDataManagementTables(env); const b=await parseBody(req),institution=safeText(b.institution||"CIDEB",120),mode=safeText(b.mode,30),people=await getInstitutionPeople(env,institution),now=nowISO();
     if(!people.length)return json({ok:true,message:`No se encontraron expedientes asociados a ${institution}.`,preview:await institutionPreview(env,institution)});
     if(mode==="archive"){
-      for(const person of people){ await env.DB.prepare(`UPDATE teacher_assignments SET active=0 WHERE person_id=?`).bind(person.id).run(); await env.DB.prepare(`UPDATE school_continuity SET approved_at=NULL,updated_at=? WHERE person_id=?`).bind(now,person.id).run(); await env.DB.prepare(`UPDATE person_programs SET school_followup=0,updated_at=? WHERE person_id=?`).bind(now,person.id).run();
+      for(const person of people){ await env.DB.prepare(`UPDATE teacher_assignments SET active=0 WHERE person_id=?`).bind(person.id).run(); await env.DB.prepare(`UPDATE guardians SET active=0,updated_at=? WHERE person_id=?`).bind(now,person.id).run(); await env.DB.prepare(`UPDATE school_continuity SET approved_at=NULL,updated_at=? WHERE person_id=?`).bind(now,person.id).run(); await env.DB.prepare(`UPDATE person_programs SET school_followup=0,updated_at=? WHERE person_id=?`).bind(now,person.id).run();
         if(Number(person.therapy_with_alex)){await env.DB.prepare(`INSERT INTO person_data_context (person_id,context_type,institution_name,updated_at) VALUES (?,'private','',?) ON CONFLICT(person_id) DO UPDATE SET context_type='private',institution_name='',updated_at=excluded.updated_at`).bind(person.id,now).run();}
         else {await env.DB.prepare(`UPDATE people SET status='archived',updated_at=? WHERE id=?`).bind(now,person.id).run(); await env.DB.prepare(`UPDATE client_access SET active=0,updated_at=? WHERE person_id=?`).bind(now,person.id).run(); await env.DB.prepare(`UPDATE guardians SET active=0,updated_at=? WHERE person_id=?`).bind(now,person.id).run(); const cur=await getPersonDataContext(env,person.id); await env.DB.prepare(`INSERT INTO person_data_context (person_id,context_type,institution_name,archive_reason,archived_at,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(person_id) DO UPDATE SET archive_reason=excluded.archive_reason,archived_at=excluded.archived_at,updated_at=excluded.updated_at`).bind(person.id,cur.context_type||'cideb',cur.institution_name||institution,`Cierre de uso institucional: ${institution}`,now,now).run();}
       }
@@ -1651,9 +1819,9 @@ Nunca tienes acceso a las notas privadas de Alex.
     }
     if(mode==="delete"){
       if(normalizeConfirmation(b.confirmation)!==normalizeConfirmation(`CERRAR ${institution} Y ELIMINAR`))return json({error:`Para confirmar escribe exactamente: CERRAR ${institution} Y ELIMINAR`},400);
-      for(const person of people){ await env.DB.batch([env.DB.prepare(`DELETE FROM teacher_observations WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM teacher_assignments WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM school_continuity WHERE person_id=?`).bind(person.id)]);
+      for(const person of people){ await env.DB.batch([env.DB.prepare(`DELETE FROM teacher_observations WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM teacher_assignments WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM school_continuity WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM school_continuity_drafts WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM school_continuity_versions WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM school_enrollments WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM family_observations WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM family_profiles WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM guardians WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM notifications WHERE person_id=? AND type IN ('teacher_observation','family_observation')`).bind(person.id)]);
         if(Number(person.therapy_with_alex)){await env.DB.prepare(`UPDATE person_programs SET school_followup=0,school_name='',grade_level='',school_year='',updated_at=? WHERE person_id=?`).bind(now,person.id).run(); await env.DB.prepare(`INSERT INTO person_data_context (person_id,context_type,institution_name,updated_at) VALUES (?,'private','',?) ON CONFLICT(person_id) DO UPDATE SET context_type='private',institution_name='',archive_reason=NULL,archived_at=NULL,updated_at=excluded.updated_at`).bind(person.id,now).run();}
-        else {await env.DB.batch([env.DB.prepare(`DELETE FROM notifications WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM audit_log WHERE person_id=?`).bind(person.id)]); await env.DB.prepare(`DELETE FROM people WHERE id=?`).bind(person.id).run();}
+        else {await env.DB.batch([env.DB.prepare(`DELETE FROM notifications WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM audit_log WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM appointments WHERE person_id=?`).bind(person.id)]); await env.DB.prepare(`DELETE FROM people WHERE id=?`).bind(person.id).run();}
       }
       await env.DB.prepare(`DELETE FROM teachers WHERE LOWER(COALESCE(school_name,'')) LIKE ?`).bind(`%${institution.toLowerCase()}%`).run(); await logAudit(env,"admin","alex","delete_institution_data",null,`Se eliminaron datos escolares asociados a ${institution}; se preservaron procesos terapéuticos privados.`); return json({ok:true,mode,message:`Datos escolares de ${institution} eliminados. Los procesos terapéuticos privados se conservaron y dejaron de estar vinculados a la institución.`,preview:await institutionPreview(env,institution)});
     }
@@ -1661,10 +1829,19 @@ Nunca tienes acceso a las notas privadas de Alex.
   }
 
   if (path === "/api/admin/program" && req.method === "POST") {
-    await ensureSchoolModuleTables(env); const b=await parseBody(req), personId=safeText(b.person_id,120); if(!personId) return json({error:"Persona obligatoria."},400);
+    await ensureSchoolModuleTables(env);
+    const b=await parseBody(req), personId=safeText(b.person_id,120);
+    if(!personId) return json({error:"Persona obligatoria."},400);
+    const current=await getPersonProgram(env,personId);
+    const has=(key)=>Object.prototype.hasOwnProperty.call(b,key);
+    const therapy=has("therapy_with_alex")?(b.therapy_with_alex?1:0):Number(current.therapy_with_alex||0);
+    const school=has("school_followup")?(b.school_followup?1:0):Number(current.school_followup||0);
+    const schoolName=has("school_name")?safeText(b.school_name,180):safeText(current.school_name,180);
+    const grade=has("grade_level")?safeText(b.grade_level,100):safeText(current.grade_level,100);
+    const year=has("school_year")?safeText(b.school_year,60):safeText(current.school_year,60);
     await env.DB.prepare(`INSERT INTO person_programs (person_id,therapy_with_alex,school_followup,school_name,grade_level,school_year,updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(person_id) DO UPDATE SET therapy_with_alex=excluded.therapy_with_alex,school_followup=excluded.school_followup,school_name=excluded.school_name,grade_level=excluded.grade_level,school_year=excluded.school_year,updated_at=excluded.updated_at`)
-      .bind(personId,b.therapy_with_alex?1:0,b.school_followup?1:0,safeText(b.school_name,180),safeText(b.grade_level,100),safeText(b.school_year,60),nowISO()).run();
-    if(!b.therapy_with_alex) await env.DB.prepare(`UPDATE client_access SET ai_enabled=0,updated_at=? WHERE person_id=?`).bind(nowISO(),personId).run();
+      .bind(personId,therapy,school,schoolName,grade,year,nowISO()).run();
+    if(!therapy) await env.DB.prepare(`UPDATE client_access SET ai_enabled=0,updated_at=? WHERE person_id=?`).bind(nowISO(),personId).run();
     return json({ok:true,program:await getPersonProgram(env,personId)});
   }
 
@@ -1689,6 +1866,39 @@ Nunca tienes acceso a las notas privadas de Alex.
     await logAudit(env,"admin","alex","assign_teacher",personId,`Teacher ${teacherId}`); return json({ok:true});
   }
 
+  if (path === "/api/admin/teachers/detail" && req.method === "GET") {
+    await ensureSchoolModuleTables(env);
+    const teacherId=safeText(url.searchParams.get('teacher_id'),120);
+    const teacher=await env.DB.prepare(`SELECT id,full_name,email,school_name,active,access_hint,agreement_version,agreement_accepted_at,last_login_at FROM teachers WHERE id=?`).bind(teacherId).first();
+    if(!teacher)return json({error:'Docente no encontrado.'},404);
+    const {results}=await env.DB.prepare(`SELECT ta.person_id,ta.school_year,ta.active,p.full_name FROM teacher_assignments ta JOIN people p ON p.id=ta.person_id WHERE ta.teacher_id=? ORDER BY ta.active DESC,ta.school_year DESC,p.full_name`).bind(teacherId).all();
+    return json({teacher,assignments:results||[]});
+  }
+
+  if (path === "/api/admin/teachers/access" && req.method === "POST") {
+    const b=await parseBody(req),teacherId=safeText(b.teacher_id,120);
+    await env.DB.prepare(`UPDATE teachers SET active=?,updated_at=? WHERE id=?`).bind(b.active?1:0,nowISO(),teacherId).run();
+    await logAudit(env,'admin','alex',b.active?'activate_teacher':'deactivate_teacher',null,`Docente ${teacherId}`);
+    return json({ok:true});
+  }
+
+  if (path === "/api/admin/teachers/regenerate" && req.method === "POST") {
+    const b=await parseBody(req),teacherId=safeText(b.teacher_id,120);
+    const teacher=await env.DB.prepare(`SELECT id FROM teachers WHERE id=?`).bind(teacherId).first();
+    if(!teacher)return json({error:'Docente no encontrado.'},404);
+    const code=generateRoleAccessCode('D'),hash=await sha256(code),now=nowISO();
+    await env.DB.prepare(`UPDATE teachers SET access_hash=?,access_hint=?,active=1,agreement_accepted_at=NULL,agreement_signed_name=NULL,agreement_version=?,updated_at=? WHERE id=?`).bind(hash,code.slice(-4),TEACHER_AGREEMENT_VERSION,now,teacherId).run();
+    await logAudit(env,'admin','alex','regenerate_teacher_access',null,`Docente ${teacherId}`);
+    return json({ok:true,access_code:code});
+  }
+
+  if (path === "/api/admin/teachers/unassign" && req.method === "POST") {
+    const b=await parseBody(req),teacherId=safeText(b.teacher_id,120),personId=safeText(b.person_id,120),year=safeText(b.school_year,60);
+    await env.DB.prepare(`UPDATE teacher_assignments SET active=0 WHERE teacher_id=? AND person_id=? AND school_year=?`).bind(teacherId,personId,year).run();
+    await logAudit(env,'admin','alex','unassign_teacher',personId,`Docente ${teacherId} · ${year}`);
+    return json({ok:true});
+  }
+
   if (path === "/api/admin/teacher-observations" && req.method === "GET") {
     await ensureSchoolModuleTables(env); const {results}=await env.DB.prepare(`SELECT o.*,t.full_name AS teacher_name,p.full_name AS person_name FROM teacher_observations o JOIN teachers t ON t.id=o.teacher_id JOIN people p ON p.id=o.person_id ORDER BY CASE o.status WHEN 'submitted' THEN 0 ELSE 1 END,o.created_at DESC LIMIT 100`).all(); return json({observations:results||[]});
   }
@@ -1696,35 +1906,54 @@ Nunca tienes acceso a las notas privadas de Alex.
   if (path === "/api/admin/teacher-observations/review" && req.method === "POST") {
     await ensureSchoolModuleTables(env); const b=await parseBody(req),id=safeText(b.id,120); if(!id)return json({error:"Observación obligatoria."},400);
     const row=await env.DB.prepare(`SELECT person_id FROM teacher_observations WHERE id=?`).bind(id).first(); if(!row)return json({error:"Observación no encontrada."},404);
-    await env.DB.prepare(`UPDATE teacher_observations SET status='reviewed',professional_comment=?,reviewed_at=?,updated_at=? WHERE id=?`).bind(safeText(b.professional_comment,5000),nowISO(),nowISO(),id).run();
+    await env.DB.prepare(`UPDATE teacher_observations SET status='reviewed',private_note=?,professional_comment=?,reviewed_at=?,updated_at=? WHERE id=?`).bind(safeText(b.private_note,5000),safeText(b.professional_comment,5000),nowISO(),nowISO(),id).run();
     await logAudit(env,"admin","alex","review_teacher_observation",row.person_id,"Observación docente revisada"); return json({ok:true});
   }
 
   if (path === "/api/admin/school-continuity" && req.method === "GET") {
-    await ensureSchoolModuleTables(env);
+    await ensureCidebDirectoryTables(env);
     const personId=safeText(url.searchParams.get("person_id"),120);
     if(!personId)return json({error:"Persona obligatoria."},400);
-    await ensureCidebDirectoryTables(env);
-    const continuity=await env.DB.prepare(`SELECT * FROM school_continuity WHERE person_id=?`).bind(personId).first();
-    const snapshot=await getSchoolSnapshot(env,personId,false);
-    const person=await env.DB.prepare(`SELECT id,full_name,age,status FROM people WHERE id=?`).bind(personId).first();
-    const program=await getPersonProgram(env,personId);
-    const version=await env.DB.prepare(`SELECT COUNT(*) AS count,MAX(version_number) AS latest FROM school_continuity_versions WHERE person_id=?`).bind(personId).first();
-    return json({person,program,continuity:continuity||{},snapshot,version_count:Number(version?.count||0),latest_version:Number(version?.latest||0)});
+    const [published,draft,person,program,version] = await Promise.all([
+      env.DB.prepare(`SELECT * FROM school_continuity WHERE person_id=? AND approved_at IS NOT NULL`).bind(personId).first(),
+      env.DB.prepare(`SELECT * FROM school_continuity_drafts WHERE person_id=?`).bind(personId).first(),
+      env.DB.prepare(`SELECT id,full_name,age,status FROM people WHERE id=?`).bind(personId).first(),
+      getPersonProgram(env,personId),
+      env.DB.prepare(`SELECT COUNT(*) AS count,MAX(version_number) AS latest FROM school_continuity_versions WHERE person_id=?`).bind(personId).first()
+    ]);
+    const snapshot=await getSchoolSnapshot(env,personId,true);
+    return json({
+      person, program,
+      continuity: draft || published || {},
+      published: published || {},
+      has_draft: !!draft,
+      snapshot,
+      version_count:Number(version?.count||0),
+      latest_version:Number(version?.latest||0)
+    });
   }
 
   if (path === "/api/admin/school-continuity" && req.method === "POST") {
-    await ensureCidebDirectoryTables(env); const b=await parseBody(req),personId=safeText(b.person_id,120); if(!personId)return json({error:"Persona obligatoria."},400); const now=nowISO();
+    await ensureCidebDirectoryTables(env);
+    const b=await parseBody(req),personId=safeText(b.person_id,120);
+    if(!personId)return json({error:"Persona obligatoria."},400);
+    const now=nowISO();
     const general=safeText(b.general_description,5000),strengths=safeText(b.strengths,5000),support=safeText(b.support_needs,5000),strategies=safeText(b.strategies,5000),watch=safeText(b.watch_items,5000);
-    await env.DB.prepare(`INSERT INTO school_continuity (person_id,general_description,strengths,support_needs,strategies,watch_items,approved_at,updated_at) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(person_id) DO UPDATE SET general_description=excluded.general_description,strengths=excluded.strengths,support_needs=excluded.support_needs,strategies=excluded.strategies,watch_items=excluded.watch_items,approved_at=excluded.approved_at,updated_at=excluded.updated_at`)
-      .bind(personId,general,strengths,support,strategies,watch,b.approve?now:null,now).run();
-    let versionNumber=0;
-    if(b.approve){
-      const v=await env.DB.prepare(`SELECT COALESCE(MAX(version_number),0)+1 AS next FROM school_continuity_versions WHERE person_id=?`).bind(personId).first();
-      versionNumber=Number(v?.next||1);
-      await env.DB.prepare(`INSERT INTO school_continuity_versions (id,person_id,version_number,general_description,strengths,support_needs,strategies,watch_items,published_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).bind(makeId('contver'),personId,versionNumber,general,strengths,support,strategies,watch,now,now).run();
+    if (!b.approve) {
+      await env.DB.prepare(`INSERT INTO school_continuity_drafts (person_id,general_description,strengths,support_needs,strategies,watch_items,updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(person_id) DO UPDATE SET general_description=excluded.general_description,strengths=excluded.strengths,support_needs=excluded.support_needs,strategies=excluded.strategies,watch_items=excluded.watch_items,updated_at=excluded.updated_at`)
+        .bind(personId,general,strengths,support,strategies,watch,now).run();
+      await logAudit(env,"admin","alex","save_school_continuity_draft",personId,"Borrador privado guardado; la versión publicada permanece sin cambios.");
+      return json({ok:true,published:false});
     }
-    await logAudit(env,"admin","alex",b.approve?"approve_school_continuity":"save_school_continuity",personId,b.approve?`Ficha de continuidad escolar · versión ${versionNumber}`:"Ficha de continuidad escolar"); return json({ok:true,version_number:versionNumber});
+    const v=await env.DB.prepare(`SELECT COALESCE(MAX(version_number),0)+1 AS next FROM school_continuity_versions WHERE person_id=?`).bind(personId).first();
+    const versionNumber=Number(v?.next||1);
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO school_continuity (person_id,general_description,strengths,support_needs,strategies,watch_items,approved_at,updated_at) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(person_id) DO UPDATE SET general_description=excluded.general_description,strengths=excluded.strengths,support_needs=excluded.support_needs,strategies=excluded.strategies,watch_items=excluded.watch_items,approved_at=excluded.approved_at,updated_at=excluded.updated_at`).bind(personId,general,strengths,support,strategies,watch,now,now),
+      env.DB.prepare(`INSERT INTO school_continuity_versions (id,person_id,version_number,general_description,strengths,support_needs,strategies,watch_items,published_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).bind(makeId('contver'),personId,versionNumber,general,strengths,support,strategies,watch,now,now),
+      env.DB.prepare(`DELETE FROM school_continuity_drafts WHERE person_id=?`).bind(personId)
+    ]);
+    await logAudit(env,"admin","alex","approve_school_continuity",personId,`Ficha de continuidad escolar · versión ${versionNumber}`);
+    return json({ok:true,published:true,version_number:versionNumber});
   }
 
   if (path === "/api/admin/family/access" && req.method === "GET") {
@@ -1736,6 +1965,25 @@ Nunca tienes acceso a las notas privadas de Alex.
     const code=generateRoleAccessCode("F"),hash=await sha256(code),id=makeId("guardian"),now=nowISO();
     await env.DB.prepare(`INSERT INTO guardians (id,person_id,full_name,relationship,email,access_hash,access_hint,active,agreement_version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,1,?,?,?)`).bind(id,personId,name,safeText(b.relationship,80),safeText(b.email,180),hash,code.slice(-4),FAMILY_AGREEMENT_VERSION,now,now).run();
     await logAudit(env,"admin","alex","create_family_access",personId,`Tutor: ${name}`); return json({ok:true,guardian_id:id,access_code:code,person_name:person.full_name});
+  }
+
+  if (path === "/api/admin/family/access/update" && req.method === "POST") {
+    const b=await parseBody(req),id=safeText(b.guardian_id,120);
+    const guardian=await env.DB.prepare(`SELECT person_id FROM guardians WHERE id=?`).bind(id).first();
+    if(!guardian)return json({error:'Acceso familiar no encontrado.'},404);
+    await env.DB.prepare(`UPDATE guardians SET active=?,updated_at=? WHERE id=?`).bind(b.active?1:0,nowISO(),id).run();
+    await logAudit(env,'admin','alex',b.active?'activate_family_access':'deactivate_family_access',guardian.person_id,`Tutor ${id}`);
+    return json({ok:true});
+  }
+
+  if (path === "/api/admin/family/access/regenerate" && req.method === "POST") {
+    const b=await parseBody(req),id=safeText(b.guardian_id,120);
+    const guardian=await env.DB.prepare(`SELECT person_id FROM guardians WHERE id=?`).bind(id).first();
+    if(!guardian)return json({error:'Acceso familiar no encontrado.'},404);
+    const code=generateRoleAccessCode('F'),hash=await sha256(code),now=nowISO();
+    await env.DB.prepare(`UPDATE guardians SET access_hash=?,access_hint=?,active=1,agreement_accepted_at=NULL,agreement_signed_name=NULL,agreement_version=?,updated_at=? WHERE id=?`).bind(hash,code.slice(-4),FAMILY_AGREEMENT_VERSION,now,id).run();
+    await logAudit(env,'admin','alex','regenerate_family_access',guardian.person_id,`Tutor ${id}`);
+    return json({ok:true,access_code:code});
   }
 
   if (path === "/api/admin/family-profile" && req.method === "GET") {
@@ -1753,7 +2001,7 @@ Nunca tienes acceso a las notas privadas de Alex.
 
   if (path === "/api/admin/family-observations/review" && req.method === "POST") {
     await ensureSchoolModuleTables(env); const b=await parseBody(req),id=safeText(b.id,120); const row=await env.DB.prepare(`SELECT person_id FROM family_observations WHERE id=?`).bind(id).first(); if(!row)return json({error:"Observación no encontrada."},404);
-    await env.DB.prepare(`UPDATE family_observations SET status='reviewed',professional_comment=?,reviewed_at=?,updated_at=? WHERE id=?`).bind(safeText(b.professional_comment,5000),nowISO(),nowISO(),id).run(); await logAudit(env,"admin","alex","review_family_observation",row.person_id,"Observación familiar revisada"); return json({ok:true});
+    await env.DB.prepare(`UPDATE family_observations SET status='reviewed',private_note=?,professional_comment=?,reviewed_at=?,updated_at=? WHERE id=?`).bind(safeText(b.private_note,5000),safeText(b.professional_comment,5000),nowISO(),nowISO(),id).run(); await logAudit(env,"admin","alex","review_family_observation",row.person_id,"Observación familiar revisada"); return json({ok:true});
   }
 
   if (path === "/api/admin/audit" && req.method === "GET") {
@@ -1761,11 +2009,22 @@ Nunca tienes acceso a las notas privadas de Alex.
   }
 
   if (path === "/api/admin/dashboard" && req.method === "GET") {
+    await ensureNotificationsTable(env);
     const [requested, confirmed, people, risk] = await Promise.all([
       env.DB.prepare("SELECT COUNT(*) AS count FROM appointments WHERE status='requested'").first(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM appointments WHERE status='confirmed'").first(),
-      env.DB.prepare("SELECT COUNT(*) AS count FROM people WHERE status='active'").first(),
-      env.DB.prepare("SELECT COUNT(*) AS count FROM ai_messages WHERE risk_flag=1").first()
+      env.DB.prepare(`
+        SELECT COUNT(*) AS count
+        FROM people p
+        LEFT JOIN person_programs pp ON pp.person_id=p.id
+        LEFT JOIN person_data_context dc ON dc.person_id=p.id
+        WHERE p.status='active'
+          AND (
+            COALESCE(pp.therapy_with_alex,0)=1
+            OR COALESCE(dc.context_type,'private') IN ('private','mixed','other')
+          )
+      `).first(),
+      env.DB.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type='ai_risk' AND is_read=0").first()
     ]);
     return json({
       requested: requested?.count || 0,
@@ -1777,10 +2036,19 @@ Nunca tienes acceso a las notas privadas de Alex.
 
   if (path === "/api/admin/appointments" && req.method === "GET") {
     const { results } = await env.DB.prepare(`
-      SELECT * FROM appointments
-      ORDER BY preferred_date ASC, preferred_time ASC
+      SELECT a.*,p.full_name AS linked_person_name FROM appointments a LEFT JOIN people p ON p.id=a.person_id
+      ORDER BY a.preferred_date ASC, a.preferred_time ASC
     `).all();
     return json({ appointments: results || [] });
+  }
+
+  if (path === "/api/admin/appointments/link" && req.method === "POST") {
+    const b=await parseBody(req),id=safeText(b.id,120),personId=safeText(b.person_id,120);
+    const person=await env.DB.prepare(`SELECT id,full_name FROM people WHERE id=?`).bind(personId).first();
+    if(!person)return json({error:'Persona no encontrada.'},404);
+    await env.DB.prepare(`UPDATE appointments SET person_id=?,updated_at=? WHERE id=?`).bind(personId,nowISO(),id).run();
+    await logAudit(env,'admin','alex','link_appointment',personId,`Cita ${id}`);
+    return json({ok:true,person_name:person.full_name});
   }
 
   if (path === "/api/admin/appointments/status" && req.method === "POST") {
@@ -1802,6 +2070,8 @@ Nunca tienes acceso a las notas privadas de Alex.
       SELECT
         p.id,
         p.full_name,
+        p.email,
+        p.phone,
         p.status,
         COALESCE(dc.context_type,'private') AS context_type,
         COALESCE(se.student_number,'') AS student_number,
@@ -1925,6 +2195,12 @@ Nunca tienes acceso a las notas privadas de Alex.
     });
   }
 
+  if (path === "/api/admin/cideb/export-audit" && req.method === "POST") {
+    const b=await parseBody(req);
+    await logAudit(env,"admin","alex","export_cideb_directory",null,`Exportación de directorio CIDEB · ${safeText(b.total,20)} registros · ${safeText(b.filter_summary,300)}`);
+    return json({ok:true});
+  }
+
   if (path === "/api/admin/cideb/summary" && req.method === "GET") {
     await ensureCidebDirectoryTables(env);
     const base = `
@@ -1998,12 +2274,15 @@ Nunca tienes acceso a las notas privadas de Alex.
     const enrollmentId = makeId('enrollment');
     const now = nowISO();
     const age = b.age === '' || b.age == null ? null : Number(b.age);
-    const isMinor = age !== null && Number.isFinite(age) && age < 18 ? 1 : 0;
+    if (age !== null && (!Number.isFinite(age) || age < 0 || age > 120)) return json({ error: "Indica una edad válida." }, 400);
+    const email = cleanSchoolValue(b.email,160).toLowerCase();
+    if (!isReasonableEmail(email)) return json({ error: "Revisa el formato del correo electrónico." }, 400);
+    const isMinor = age !== null && age < 18 ? 1 : 0;
     const grade = cleanSchoolValue(b.grade_level, 60);
     const group = cleanSchoolValue(b.group_name, 60);
 
     await env.DB.batch([
-      env.DB.prepare(`INSERT INTO people (id,full_name,age,email,phone,is_minor,guardian_name,guardian_email,guardian_phone,status,created_at,updated_at) VALUES (?,?,?,?,?,?, '', '', '', 'active',?,?)`).bind(personId,name,Number.isFinite(age)?age:null,cleanSchoolValue(b.email,160),cleanSchoolValue(b.phone,40),isMinor,now,now),
+      env.DB.prepare(`INSERT INTO people (id,full_name,age,email,phone,is_minor,guardian_name,guardian_email,guardian_phone,status,created_at,updated_at) VALUES (?,?,?,?,?,?, '', '', '', 'active',?,?)`).bind(personId,name,Number.isFinite(age)?age:null,email,cleanSchoolValue(b.phone,40),isMinor,now,now),
       env.DB.prepare(`INSERT INTO vocational_profiles (person_id,updated_at) VALUES (?,?)`).bind(personId,now),
       env.DB.prepare(`INSERT INTO person_programs (person_id,therapy_with_alex,school_followup,school_name,grade_level,school_year,updated_at) VALUES (?,0,1,'CIDEB',?,?,?)`).bind(personId,grade,year,now),
       env.DB.prepare(`INSERT INTO person_data_context (person_id,context_type,institution_name,updated_at) VALUES (?,'cideb','CIDEB',?)`).bind(personId,now),
@@ -2050,13 +2329,18 @@ Nunca tienes acceso a las notas privadas de Alex.
       if(!studentNumber||!name||!year){skipped.push({row:i+2,reason:'Faltan matrícula, nombre o ciclo'});continue;}
       if(existing.has(studentNumber)||seen.has(studentNumber)){skipped.push({row:i+2,reason:`Matrícula duplicada: ${studentNumber}`});continue;}
       seen.add(studentNumber);
+      const rawAge = r.age ?? r.edad ?? '';
+      const age = String(rawAge).trim() === '' ? null : Number(rawAge);
+      const email = cleanSchoolValue(r.email||r.correo,160).toLowerCase();
+      if (age !== null && (!Number.isFinite(age) || age < 0 || age > 120)) { skipped.push({row:i+2,reason:'Edad inválida'}); continue; }
+      if (!isReasonableEmail(email)) { skipped.push({row:i+2,reason:'Correo inválido'}); continue; }
       valid.push({
         studentNumber,name,year,
         grade:cleanSchoolValue(r.grade_level||r.grado,60),
         group:cleanSchoolValue(r.group_name||r.grupo,60),
-        email:cleanSchoolValue(r.email||r.correo,160),
+        email,
         phone:cleanSchoolValue(r.phone||r.telefono,40),
-        age:(r.age||r.edad)===''||r.age==null&&r.edad==null?null:Number(r.age||r.edad)
+        age
       });
     }
 
@@ -2117,22 +2401,32 @@ Nunca tienes acceso a las notas privadas de Alex.
       env.DB.prepare(`SELECT t.full_name,ta.school_year,ta.active FROM teacher_assignments ta JOIN teachers t ON t.id=ta.teacher_id WHERE ta.person_id=? ORDER BY ta.school_year DESC,t.full_name`).bind(personId).all(),
       env.DB.prepare(`SELECT student_number,grade_level,group_name,school_year,status,is_current,created_at,updated_at FROM school_enrollments WHERE person_id=? ORDER BY created_at DESC`).bind(personId).all()
     ]);
+    await logAudit(env,"admin","alex","export_school_student",personId,"Exportación individual de datos escolares");
     return json({exported_at:nowISO(),person,program,enrollment:enrollment||{},continuity:continuity||{},observations:observations||[],teacher_assignments:assignments||[],enrollment_history:history||[]});
   }
 
   if (path === "/api/admin/people" && req.method === "GET") {
     await ensureDataManagementTables(env);
+    const q = safeText(url.searchParams.get('q'),120).toLowerCase();
+    const limit = Math.min(250, Math.max(25, Number(url.searchParams.get('limit') || 150)));
+    const like = `%${q}%`;
     const { results } = await env.DB.prepare(`
       SELECT p.*,
         (SELECT COUNT(*) FROM private_notes n WHERE n.person_id=p.id) AS note_count,
-        (SELECT COUNT(*) FROM ai_messages m WHERE m.person_id=p.id AND m.risk_flag=1) AS risk_count,
-        COALESCE((SELECT therapy_with_alex FROM person_programs pp WHERE pp.person_id=p.id),0) AS therapy_with_alex,
-        COALESCE((SELECT school_followup FROM person_programs pp WHERE pp.person_id=p.id),0) AS school_followup,
-        COALESCE((SELECT context_type FROM person_data_context dc WHERE dc.person_id=p.id),'private') AS context_type,
-        COALESCE((SELECT institution_name FROM person_data_context dc WHERE dc.person_id=p.id),'') AS institution_name
+        ((SELECT COUNT(*) FROM ai_messages m WHERE m.person_id=p.id AND m.risk_flag=1 AND m.role='user') +
+         (SELECT COUNT(*) FROM client_ai_messages cm WHERE cm.person_id=p.id AND cm.risk_flag=1 AND cm.role='user')) AS risk_count,
+        COALESCE(pp.therapy_with_alex,0) AS therapy_with_alex,
+        COALESCE(pp.school_followup,0) AS school_followup,
+        COALESCE(dc.context_type,'private') AS context_type,
+        COALESCE(dc.institution_name,'') AS institution_name
       FROM people p
+      LEFT JOIN person_programs pp ON pp.person_id=p.id
+      LEFT JOIN person_data_context dc ON dc.person_id=p.id
+      WHERE COALESCE(dc.context_type,'private') <> 'cideb'
+        AND (?='' OR LOWER(p.full_name) LIKE ? OR LOWER(COALESCE(p.email,'')) LIKE ? OR LOWER(COALESCE(p.phone,'')) LIKE ?)
       ORDER BY p.updated_at DESC
-    `).all();
+      LIMIT ?
+    `).bind(q, like, like, like, limit).all();
     return json({ people: results || [] });
   }
 
@@ -2142,7 +2436,11 @@ Nunca tienes acceso a las notas privadas de Alex.
     if (!name) return json({ error: "El nombre es obligatorio." }, 400);
 
     const age = b.age === "" || b.age == null ? null : Number(b.age);
-    const isMinor = age !== null && Number.isFinite(age) && age < 18 ? 1 : 0;
+    if (age !== null && (!Number.isFinite(age) || age < 0 || age > 120)) return json({ error: "Indica una edad válida." }, 400);
+    const email = safeText(b.email,160).toLowerCase();
+    const guardianEmail = safeText(b.guardian_email,160).toLowerCase();
+    if (!isReasonableEmail(email) || !isReasonableEmail(guardianEmail)) return json({ error: "Revisa el formato del correo electrónico." }, 400);
+    const isMinor = age !== null && age < 18 ? 1 : 0;
     const id = makeId("person");
     const now = nowISO();
 
@@ -2153,10 +2451,10 @@ Nunca tienes acceso a las notas privadas de Alex.
         status, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
     `).bind(
-      id, name, Number.isFinite(age) ? age : null,
-      safeText(b.email, 160), safeText(b.phone, 40), isMinor,
-      safeText(b.guardian_name, 120), safeText(b.guardian_email, 160),
-      safeText(b.guardian_phone, 40), now, now
+      id, name, age,
+      email, safeText(b.phone, 40), isMinor,
+      isMinor ? safeText(b.guardian_name, 120) : '', isMinor ? guardianEmail : '',
+      isMinor ? safeText(b.guardian_phone, 40) : '', now, now
     ).run();
 
     await env.DB.prepare(`INSERT INTO vocational_profiles (person_id, updated_at) VALUES (?, ?)`)
@@ -2181,6 +2479,9 @@ Nunca tienes acceso a las notas privadas de Alex.
         access_hint,
         active,
         consent_confirmed,
+        consent_version,
+        consent_confirmed_at,
+        consent_confirmed_by,
         ai_enabled,
         created_at,
         updated_at,
@@ -2299,6 +2600,9 @@ Nunca tienes acceso a las notas privadas de Alex.
         access_hint,
         active,
         consent_confirmed,
+        consent_version,
+        consent_confirmed_at,
+        consent_confirmed_by,
         ai_enabled,
         created_at,
         updated_at,
@@ -2399,11 +2703,14 @@ Nunca tienes acceso a las notas privadas de Alex.
       }, 400);
     }
 
+    const consentBy = consent ? safeText(b.consent_confirmed_by, 180) : "";
+    if (consent && !consentBy) return json({ error: "Indica quién confirmó el consentimiento." }, 400);
+    const consentAt = consent ? nowISO() : null;
     await env.DB.prepare(`
       UPDATE client_access
-      SET active=?, consent_confirmed=?, ai_enabled=?, updated_at=?
+      SET active=?, consent_confirmed=?, consent_version=?, consent_confirmed_at=?, consent_confirmed_by=?, ai_enabled=?, updated_at=?
       WHERE person_id=?
-    `).bind(active, consent, aiEnabled, nowISO(), personId).run();
+    `).bind(active, consent, consent ? AI_CONSENT_VERSION : null, consentAt, consentBy || null, aiEnabled, nowISO(), personId).run();
 
     return json({ ok: true });
   }
@@ -2788,6 +3095,7 @@ export default {
     }
 
     const assetResponse = await env.ASSETS.fetch(req);
-    return addSecurityHeaders(assetResponse, false);
+    const protectedShell = new Set(["/admin.html","/mi-espacio.html","/docente.html","/familia.html"]).has(url.pathname);
+    return addSecurityHeaders(assetResponse, protectedShell);
   }
 };

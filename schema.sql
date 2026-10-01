@@ -2,6 +2,7 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS appointments (
   id TEXT PRIMARY KEY,
+  person_id TEXT,
   client_name TEXT NOT NULL,
   age INTEGER,
   client_email TEXT,
@@ -15,6 +16,8 @@ CREATE TABLE IF NOT EXISTS appointments (
   preferred_date TEXT NOT NULL,
   preferred_time TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'requested',
+  privacy_consent_version TEXT,
+  privacy_accepted_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -87,6 +90,9 @@ CREATE TABLE IF NOT EXISTS client_access (
   access_hint TEXT,
   active INTEGER NOT NULL DEFAULT 1,
   consent_confirmed INTEGER NOT NULL DEFAULT 0,
+  consent_version TEXT,
+  consent_confirmed_at TEXT,
+  consent_confirmed_by TEXT,
   ai_enabled INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -253,6 +259,7 @@ CREATE TABLE IF NOT EXISTS teacher_observations (
   result_text TEXT,
   additional_comments TEXT,
   status TEXT NOT NULL DEFAULT 'submitted',
+  private_note TEXT,
   professional_comment TEXT,
   reviewed_at TEXT,
   created_at TEXT NOT NULL,
@@ -320,6 +327,7 @@ CREATE TABLE IF NOT EXISTS family_observations (
   what_helped TEXT,
   questions TEXT,
   status TEXT NOT NULL DEFAULT 'submitted',
+  private_note TEXT,
   professional_comment TEXT,
   reviewed_at TEXT,
   created_at TEXT NOT NULL,
@@ -415,3 +423,29 @@ CREATE TABLE IF NOT EXISTS school_continuity_versions (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_school_continuity_versions_unique
 ON school_continuity_versions(person_id, version_number);
+
+
+CREATE TABLE IF NOT EXISTS school_continuity_drafts (
+  person_id TEXT PRIMARY KEY,
+  general_description TEXT,
+  strengths TEXT,
+  support_needs TEXT,
+  strategies TEXT,
+  watch_items TEXT,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS security_action_limits (
+  action_key TEXT PRIMARY KEY,
+  action_scope TEXT NOT NULL,
+  window_started_at TEXT NOT NULL,
+  request_count INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_appointments_person_v82
+ON appointments(person_id);
+
+CREATE INDEX IF NOT EXISTS idx_continuity_drafts_updated_v82
+ON school_continuity_drafts(updated_at);
