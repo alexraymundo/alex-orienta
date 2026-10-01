@@ -1879,3 +1879,109 @@ textarea{resize:vertical}
 @media(max-width:1250px){.directory-search-row{grid-template-columns:1.5fr repeat(3,1fr)}.directory-search-row select:nth-of-type(n+4){grid-column:span 1}.cideb-pending-strip{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:900px){.admin-header{align-items:flex-start;flex-direction:column}.global-search-shell{width:100%}.directory-head{flex-direction:column}.directory-actions{justify-content:flex-start}.directory-search-row{grid-template-columns:1fr 1fr}.student-table-head{display:none}.student-table-row{grid-template-columns:1fr 1fr}.student-table-row>div:nth-child(3),.student-table-row>div:nth-child(4){border-top:1px solid rgba(148,163,184,.06);padding-top:8px}.row-open-btn{justify-self:end}.cideb-pending-strip{grid-template-columns:1fr 1fr}}
 @media(max-width:600px){.directory-search-row,.student-table-row,.three-cols,.quick-student-kpis{grid-template-columns:1fr}.directory-actions{width:100%}.directory-actions button{flex:1}.cideb-pending-strip{grid-template-columns:1fr}.student-quick-panel{width:100%;padding:30px 18px}.import-mini-table>div{grid-template-columns:1fr 1.3fr}.import-mini-table b:nth-child(n+3),.import-mini-table span:nth-child(n+3){display:none}}
+
+
+/* ==========================================================
+   NORTIA v7.5.1 — Scroll estable + resumen CIDEB más compacto
+   ========================================================== */
+@media (min-width:981px){
+  html,
+  body.admin-body{
+    height:100%;
+  }
+
+  .admin-body{
+    overflow:hidden;
+  }
+
+  .admin-layout{
+    height:100dvh;
+    min-height:0;
+  }
+
+  .sidebar{
+    height:100dvh;
+    min-height:0;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    scrollbar-gutter:stable;
+  }
+
+  .admin-main{
+    height:100dvh;
+    min-height:0;
+    min-width:0;
+    overflow-y:auto;
+    overflow-x:hidden;
+    overscroll-behavior-y:contain;
+    scrollbar-gutter:stable;
+    padding-bottom:84px;
+    touch-action:pan-y;
+  }
+}
+
+/* En pantallas amplias, el resumen CIDEB usa mejor el espacio vertical. */
+@media (min-width:1350px){
+  .cideb-overview-stats{
+    gap:8px;
+    margin:14px 0;
+  }
+
+  .cideb-overview-stats article{
+    padding:14px 16px;
+  }
+
+  .cideb-pending-strip{
+    gap:8px;
+    margin:10px 0 14px;
+  }
+
+  .cideb-pending-strip article{
+    padding:11px 13px;
+  }
+
+  .cideb-module-grid{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:10px;
+  }
+
+  .cideb-module-grid button{
+    min-height:112px;
+    padding:18px 20px;
+  }
+
+  .cideb-module-grid strong{
+    margin:13px 0 5px;
+    font-size:1.02rem;
+  }
+
+  .cideb-module-grid small{
+    line-height:1.45;
+  }
+}
+
+@media (max-width:1349px) and (min-width:981px){
+  .cideb-module-grid button{
+    min-height:130px;
+  }
+}
+
+/* Cuando el panel pasa a navegación horizontal, vuelve al scroll normal de página. */
+@media (max-width:980px){
+  html,
+  body.admin-body{
+    height:auto;
+    min-height:100%;
+  }
+
+  .admin-layout,
+  .admin-main,
+  .sidebar{
+    height:auto;
+    min-height:0;
+  }
+
+  .admin-main{
+    overflow:visible;
+  }
+}

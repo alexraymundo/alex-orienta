@@ -268,6 +268,123 @@ async function loadCidebStudents(page=1) {
 }
 window.loadCidebStudents=loadCidebStudents;
 
+
+function csvCell(value) {
+  const text = String(value ?? "");
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function downloadCsv(filename, rows) {
+  const csv = "\uFEFF" + rows.map(row => row.map(csvCell).join(",")).join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 500);
+}
+
+function currentCidebDirectoryParams(page = 1, pageSize = 50) {
+  return new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+    q: $("#cidebStudentSearch")?.value || "",
+    year: $("#cidebYearFilter")?.value || "",
+    grade: $("#cidebGradeFilter")?.value || "",
+    group: $("#cidebGroupFilter")?.value || "",
+    teacher: $("#cidebTeacherFilter")?.value || "",
+    status: $("#cidebStatusFilter")?.value || "active"
+  });
+}
+
+async function exportCidebDirectory() {
+  const button = $("#exportCidebDirectoryBtn");
+  if (!button) return;
+
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = "EXPORTANDO...";
+
+  try {
+    const first = await api(
+      `/api/admin/cideb/students?${currentCidebDirectoryParams(1, 50).toString()}`
+    );
+
+    const totalPages = Math.max(1, Number(first.pagination?.pages || 1));
+    let students = [...(first.students || [])];
+
+    for (let page = 2; page <= totalPages; page++) {
+      button.textContent = `EXPORTANDO ${page}/${totalPages}...`;
+
+      const next = await api(
+        `/api/admin/cideb/students?${currentCidebDirectoryParams(page, 50).toString()}`
+      );
+
+      students.push(...(next.students || []));
+    }
+
+    if (!students.length) {
+      alert("No hay alumnos que coincidan con los filtros actuales.");
+      return;
+    }
+
+    const rows = [
+      [
+        "Matrícula",
+        "Nombre",
+        "Edad",
+        "Grado",
+        "Grupo",
+        "Ciclo escolar",
+        "Docente(s)",
+        "Estado",
+        "Correo",
+        "Teléfono",
+        "Observaciones pendientes",
+        "Informe publicado",
+        "Accesos familiares"
+      ],
+      ...students.map(student => [
+        student.student_number || "",
+        student.full_name || "",
+        student.age ?? "",
+        student.grade_level || "",
+        student.group_name || "",
+        student.school_year || "",
+        student.teacher_names || "",
+        student.status === "active" ? "Activo" : "Archivado",
+        student.email || "",
+        student.phone || "",
+        Number(student.pending_observations || 0),
+        student.report_published_at ? "Sí" : "No",
+        Number(student.family_access_count || 0)
+      ])
+    ];
+
+    const cycle = $("#cidebYearFilter")?.value || "todos_los_ciclos";
+    const today = new Date().toISOString().slice(0, 10);
+    const safeCycle = String(cycle).replace(/[^a-z0-9áéíóúñ_-]+/gi, "_");
+
+    downloadCsv(
+      `NORTIA_CIDEB_${safeCycle}_${today}.csv`,
+      rows
+    );
+  } catch (e) {
+    alert(`No fue posible exportar el directorio: ${e.message}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
+  }
+}
+
+$("#exportCidebDirectoryBtn")?.addEventListener(
+  "click",
+  exportCidebDirectory
+);
+
 async function openCidebStudent(id) {
   try {
     const d=await api(`/api/admin/cideb/student?person_id=${encodeURIComponent(id)}`);
