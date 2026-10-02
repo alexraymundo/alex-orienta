@@ -1,3 +1,17 @@
+# NORTIA V8.5.1 — Corrección de borrador IA
+
+## Corrección principal
+Se corrigió el error que podía mostrar `La IA no devolvió un borrador estructurado`.
+
+La generación ahora:
+- acepta respuestas estructuradas en etiquetas o JSON;
+- tolera saltos de línea y pequeños errores de formato;
+- realiza un segundo intento automático si el primer resultado no puede interpretarse;
+- no pierde ni modifica las observaciones existentes si la IA falla;
+- mantiene el borrador como privado hasta que Alex lo revise y publique.
+
+No requiere migración de D1.
+
 # NORTIA V8.5 — Informe asistido por IA
 
 ## Qué cambia

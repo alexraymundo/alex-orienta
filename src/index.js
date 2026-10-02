@@ -91,12 +91,96 @@ function extractAIText(result) {
   return "";
 }
 
+function repairJsonStringNewlines(value) {
+  const source = String(value || "");
+  let out = "", inString = false, escaped = false;
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i];
+    if (inString) {
+      if (escaped) { out += ch; escaped = false; continue; }
+      if (ch === "\\") { out += ch; escaped = true; continue; }
+      if (ch === '"') { out += ch; inString = false; continue; }
+      if (ch === "\n") { out += "\\n"; continue; }
+      if (ch === "\r") { continue; }
+      if (ch === "\t") { out += "\\t"; continue; }
+      out += ch;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    out += ch;
+  }
+  return out;
+}
+
 function parseAIJsonObject(text) {
   const raw = String(text || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "");
   const start = raw.indexOf("{");
   const end = raw.lastIndexOf("}");
-  if (start < 0 || end <= start) throw new Error("La IA no devolvió un borrador estructurado.");
-  return JSON.parse(raw.slice(start, end + 1));
+  if (start < 0 || end <= start) throw new Error("Sin objeto JSON utilizable.");
+  const candidate = raw.slice(start, end + 1);
+  const attempts = [
+    candidate,
+    repairJsonStringNewlines(candidate),
+    repairJsonStringNewlines(candidate).replace(/,\s*([}\]])/g, "$1")
+  ];
+  for (const attempt of attempts) {
+    try { return JSON.parse(attempt); } catch {}
+  }
+  throw new Error("JSON no interpretable.");
+}
+
+function continuityDraftFromAIText(text) {
+  const raw = String(text || "").trim();
+  if (!raw) throw new Error("La IA respondió sin contenido.");
+
+  try {
+    const parsed = parseAIJsonObject(raw);
+    const normalize = value => Array.isArray(value) ? value.map(x => safeText(x, 1000)).filter(Boolean).join("\n") : safeText(value, 5000);
+    return {
+      general_description: normalize(parsed.general_description),
+      strengths: normalize(parsed.strengths),
+      support_needs: normalize(parsed.support_needs),
+      strategies: normalize(parsed.strategies),
+      watch_items: normalize(parsed.watch_items)
+    };
+  } catch {}
+
+  const tags = ["general_description", "strengths", "support_needs", "strategies", "watch_items"];
+  const result = {};
+  for (const tag of tags) {
+    const match = raw.match(new RegExp(`<${tag}\\s*>([\\s\\S]*?)<\\/${tag}\\s*>`, "i"));
+    result[tag] = safeText(match?.[1] || "", 5000);
+  }
+  if (Object.values(result).some(Boolean)) return result;
+
+  const aliases = {
+    general_description: ["GENERAL", "DESCRIPCIÓN GENERAL", "DESCRIPCION GENERAL"],
+    strengths: ["STRENGTHS", "FORTALEZAS"],
+    support_needs: ["SUPPORT", "APOYO", "ÁREAS DE APOYO", "AREAS DE APOYO"],
+    strategies: ["STRATEGIES", "ESTRATEGIAS", "RECOMENDACIONES"],
+    watch_items: ["WATCH", "OBSERVAR", "ASPECTOS A OBSERVAR"]
+  };
+  const lines = raw.split(/\r?\n/);
+  let current = null;
+  const buckets = Object.fromEntries(tags.map(k => [k, []]));
+  for (const line of lines) {
+    const trimmed = line.trim();
+    let matchedKey = null;
+    for (const [key, names] of Object.entries(aliases)) {
+      if (names.some(name => trimmed.toLocaleUpperCase("es-MX").startsWith(name + ":"))) { matchedKey = key; break; }
+    }
+    if (matchedKey) {
+      current = matchedKey;
+      const after = trimmed.slice(trimmed.indexOf(":") + 1).trim();
+      if (after) buckets[current].push(after);
+    } else if (current && trimmed) {
+      buckets[current].push(trimmed.replace(/^[-•]\s*/, ""));
+    }
+  }
+  const labeled = Object.fromEntries(tags.map(k => [k, safeText(buckets[k].join("\n"), 5000)]));
+  if (Object.values(labeled).some(Boolean)) return labeled;
+
+  throw new Error("La IA no devolvió secciones utilizables.");
 }
 
 
@@ -2414,14 +2498,12 @@ REGLAS OBLIGATORIAS:
 - Español claro y profesional. Párrafos breves.
 - El contenido será revisado por Alex antes de que docentes o coordinación puedan verlo.
 
-RESPONDE EXCLUSIVAMENTE CON JSON VÁLIDO, SIN MARKDOWN, con estas claves exactas:
-{
-  "general_description": "máximo 90 palabras",
-  "strengths": "máximo 70 palabras",
-  "support_needs": "máximo 80 palabras",
-  "strategies": "3 a 5 sugerencias prácticas, separadas por saltos de línea",
-  "watch_items": "3 a 5 aspectos concretos para seguir observando, separados por saltos de línea"
-}
+RESPONDE EXCLUSIVAMENTE CON ESTAS 5 ETIQUETAS, SIN JSON, SIN MARKDOWN Y SIN TEXTO FUERA DE ELLAS:
+<general_description>máximo 90 palabras</general_description>
+<strengths>máximo 70 palabras; si no hay evidencia suficiente, indícalo con prudencia</strengths>
+<support_needs>máximo 80 palabras</support_needs>
+<strategies>3 a 5 sugerencias prácticas, una por línea</strategies>
+<watch_items>3 a 5 aspectos concretos para seguir observando, uno por línea</watch_items>
 `.trim();
 
     const userContext = {
@@ -2443,20 +2525,29 @@ RESPONDE EXCLUSIVAMENTE CON JSON VÁLIDO, SIN MARKDOWN, con estas claves exactas
         ],
         max_tokens: 760
       });
-      const aiText = extractAIText(result).trim();
-      const parsed = parseAIJsonObject(aiText);
-      const draft = {
-        general_description: safeText(parsed.general_description, 5000),
-        strengths: safeText(parsed.strengths, 5000),
-        support_needs: safeText(parsed.support_needs, 5000),
-        strategies: safeText(parsed.strategies, 5000),
-        watch_items: safeText(parsed.watch_items, 5000)
-      };
+      let aiText = extractAIText(result).trim();
+      let draft;
+      try {
+        draft = continuityDraftFromAIText(aiText);
+      } catch {
+        // Segundo intento deliberadamente más simple: algunos modelos pequeños pueden
+        // responder con prosa aunque el primer prompt pida una estructura concreta.
+        const retry = await env.AI.run("@cf/meta/llama-3.1-8b-instruct-fast", {
+          messages: [
+            { role: "system", content: `${system}\nIMPORTANTE: Este es un reintento. Devuelve las cinco etiquetas exactamente como se solicitaron.` },
+            { role: "user", content: JSON.stringify(userContext) }
+          ],
+          max_tokens: 760
+        });
+        aiText = extractAIText(retry).trim();
+        draft = continuityDraftFromAIText(aiText);
+      }
       if (!Object.values(draft).some(Boolean)) return json({ error: "La IA no pudo generar un borrador útil en este momento." }, 502);
       await logAudit(env, "admin", "alex", "generate_school_continuity_ai_draft", personId, `${evidenceLabel} · ${evidenceCount} registro${evidenceCount===1?'':'s'} · borrador no publicado`);
       return json({ ok: true, draft, evidence_label: evidenceLabel, observation_count: evidenceCount, review_note: reviewNote });
     } catch (error) {
-      return json({ error: `No fue posible generar el borrador: ${safeText(error?.message || error, 500)}` }, 502);
+      console.error("school-continuity ai-draft failed", safeText(error?.message || error, 500));
+      return json({ error: "No fue posible generar el borrador en este intento. Intenta nuevamente; tus observaciones no se perdieron." }, 502);
     }
   }
 
