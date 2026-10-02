@@ -91,6 +91,14 @@ function extractAIText(result) {
   return "";
 }
 
+function parseAIJsonObject(text) {
+  const raw = String(text || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "");
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start < 0 || end <= start) throw new Error("La IA no devolvió un borrador estructurado.");
+  return JSON.parse(raw.slice(start, end + 1));
+}
+
 
 async function sha256(value) {
   const digest = await crypto.subtle.digest(
@@ -2321,6 +2329,135 @@ Nunca tienes acceso a las notas privadas de Alex.
     const row=await env.DB.prepare(`SELECT person_id FROM teacher_observations WHERE id=?`).bind(id).first(); if(!row)return json({error:"Observación no encontrada."},404);
     await env.DB.prepare(`UPDATE teacher_observations SET status='reviewed',private_note=?,professional_comment=?,reviewed_at=?,updated_at=? WHERE id=?`).bind(safeText(b.private_note,5000),safeText(b.professional_comment,5000),nowISO(),nowISO(),id).run();
     await logAudit(env,"admin","alex","review_teacher_observation",row.person_id,"Observación docente revisada"); return json({ok:true});
+  }
+
+  if (path === "/api/admin/school-continuity/ai-draft" && req.method === "POST") {
+    await ensureCidebDirectoryTables(env);
+    const limited = await enforceActionRateLimit(req, env, "admin_school_report_ai", 20, 600);
+    if (limited) return limited;
+
+    const b = await parseBody(req);
+    const personId = safeText(b.person_id, 120);
+    if (!personId) return json({ error: "Persona obligatoria." }, 400);
+    if (!env.AI || typeof env.AI.run !== "function") {
+      return json({ error: "La IA interna de NORTIA no está disponible en este momento." }, 503);
+    }
+
+    const [person, program, snapshot, teacherRows, professionalRows] = await Promise.all([
+      env.DB.prepare(`SELECT id,full_name,age,status FROM people WHERE id=?`).bind(personId).first(),
+      getPersonProgram(env, personId),
+      getSchoolSnapshot(env, personId, true),
+      env.DB.prepare(`
+        SELECT observation_date,subject,context,description,strategy_used,result_text,professional_comment,
+          attention_support,instructions_support,organization_support,peer_support,frustration_support,
+          transitions_support,autonomy_support,help_seeking_support
+        FROM teacher_observations
+        WHERE person_id=? AND status='reviewed'
+        ORDER BY observation_date DESC, COALESCE(reviewed_at,updated_at,created_at) DESC
+        LIMIT 20
+      `).bind(personId).all(),
+      env.DB.prepare(`
+        SELECT observation_date,subject,context,description,strategy_used,recommendation_text,
+          attention_support,instructions_support,organization_support,peer_support,frustration_support,
+          transitions_support,autonomy_support,help_seeking_support
+        FROM professional_school_observations
+        WHERE person_id=? AND visible_to_teachers=1
+        ORDER BY observation_date DESC, COALESCE(published_at,updated_at,created_at) DESC
+        LIMIT 20
+      `).bind(personId).all()
+    ]);
+
+    if (!person) return json({ error: "Alumno no encontrado." }, 404);
+    if (!Number(snapshot?.observation_count || 0)) {
+      return json({ error: "Necesitas al menos una observación revisada o una observación profesional publicada para generar el borrador." }, 400);
+    }
+
+    const evidenceCount = Number(snapshot.observation_count || 0);
+    const evidenceLabel = evidenceCount <= 2 ? "Datos iniciales" : evidenceCount <= 5 ? "Patrón emergente" : "Mayor consistencia";
+    const reviewNote = evidenceCount <= 2
+      ? `Borrador basado en ${evidenceCount} registro${evidenceCount===1?'':'s'}. No representa una tendencia y debe verificarse con nuevas observaciones.`
+      : evidenceCount <= 5
+        ? `Borrador basado en ${evidenceCount} registros. Hay señales emergentes, pero deben seguir verificándose.`
+        : `Borrador basado en ${evidenceCount} registros. Describe patrones observados, sin constituir diagnóstico.`;
+
+    const teacherEvidence = (teacherRows.results || []).map((o, i) => ({
+      source: "docente",
+      date: o.observation_date,
+      subject: o.subject || "",
+      context: o.context || "",
+      description: safeText(o.description, 1200),
+      strategy: safeText(o.strategy_used, 800),
+      result: safeText(o.result_text, 800),
+      reviewed_comment: safeText(o.professional_comment, 800)
+    }));
+    const professionalEvidence = (professionalRows.results || []).map((o, i) => ({
+      source: "profesional",
+      date: o.observation_date,
+      subject: o.subject || "",
+      context: o.context || "",
+      description: safeText(o.description, 1200),
+      strategy: safeText(o.strategy_used, 800),
+      recommendation: safeText(o.recommendation_text, 800)
+    }));
+
+    const system = `
+Eres un asistente interno de redacción para NORTIA. Tu trabajo es preparar un BORRADOR de continuidad escolar para que Alex lo revise antes de publicarlo.
+
+REGLAS OBLIGATORIAS:
+- Usa únicamente la evidencia escolar autorizada incluida en el mensaje. No inventes hechos.
+- Nunca diagnostiques ni sugieras trastornos, condiciones clínicas, intenciones, personalidad fija o causas psicológicas.
+- No uses lenguaje estigmatizante ni etiquetas sobre el alumno.
+- Si hay 1 o 2 registros, NO hables de tendencias, patrones estables ni generalices. Usa expresiones como "en el registro disponible", "se observó" o "puede ser útil probar".
+- Si no hay evidencia suficiente para una fortaleza o necesidad específica, dilo con prudencia en vez de inventarla.
+- Las recomendaciones deben ser prácticas, escolares, reversibles y fáciles de observar.
+- No menciones IA en el texto del informe final.
+- Español claro y profesional. Párrafos breves.
+- El contenido será revisado por Alex antes de que docentes o coordinación puedan verlo.
+
+RESPONDE EXCLUSIVAMENTE CON JSON VÁLIDO, SIN MARKDOWN, con estas claves exactas:
+{
+  "general_description": "máximo 90 palabras",
+  "strengths": "máximo 70 palabras",
+  "support_needs": "máximo 80 palabras",
+  "strategies": "3 a 5 sugerencias prácticas, separadas por saltos de línea",
+  "watch_items": "3 a 5 aspectos concretos para seguir observando, separados por saltos de línea"
+}
+`.trim();
+
+    const userContext = {
+      student: { full_name: person.full_name, age: person.age ?? null },
+      school: { school_name: program?.school_name || "CIDEB", grade_level: program?.grade_level || "", school_period: program?.school_year || "" },
+      evidence_level: evidenceLabel,
+      observation_count: evidenceCount,
+      distribution: snapshot.distribution,
+      contexts: snapshot.contexts,
+      teacher_observations: teacherEvidence,
+      professional_observations: professionalEvidence
+    };
+
+    try {
+      const result = await env.AI.run("@cf/meta/llama-3.1-8b-instruct-fast", {
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: JSON.stringify(userContext) }
+        ],
+        max_tokens: 760
+      });
+      const aiText = extractAIText(result).trim();
+      const parsed = parseAIJsonObject(aiText);
+      const draft = {
+        general_description: safeText(parsed.general_description, 5000),
+        strengths: safeText(parsed.strengths, 5000),
+        support_needs: safeText(parsed.support_needs, 5000),
+        strategies: safeText(parsed.strategies, 5000),
+        watch_items: safeText(parsed.watch_items, 5000)
+      };
+      if (!Object.values(draft).some(Boolean)) return json({ error: "La IA no pudo generar un borrador útil en este momento." }, 502);
+      await logAudit(env, "admin", "alex", "generate_school_continuity_ai_draft", personId, `${evidenceLabel} · ${evidenceCount} registro${evidenceCount===1?'':'s'} · borrador no publicado`);
+      return json({ ok: true, draft, evidence_label: evidenceLabel, observation_count: evidenceCount, review_note: reviewNote });
+    } catch (error) {
+      return json({ error: `No fue posible generar el borrador: ${safeText(error?.message || error, 500)}` }, 502);
+    }
   }
 
   if (path === "/api/admin/school-continuity" && req.method === "GET") {

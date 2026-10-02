@@ -2474,3 +2474,54 @@ textarea{resize:vertical}
   .transfer-received-head{display:block}
   .transfer-date-pill{display:inline-flex;margin-top:10px}
 }
+
+
+/* ==========================================================
+   NORTIA v8.5 — Borrador de continuidad asistido por IA
+   ========================================================== */
+.report-context-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-top:18px;
+}
+.ai-draft-btn{
+  border-color:rgba(56,189,248,.26);
+  background:linear-gradient(135deg,rgba(56,189,248,.08),rgba(20,184,166,.08));
+}
+.ai-draft-review{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:18px;
+  margin:16px 0 20px;
+  padding:16px 18px;
+  border:1px solid rgba(56,189,248,.18);
+  border-radius:16px;
+  background:linear-gradient(135deg,rgba(56,189,248,.055),rgba(20,184,166,.035));
+}
+.ai-draft-review>div{display:grid;gap:3px;}
+.ai-draft-review strong{font-size:.96rem;color:#EAF7FF;}
+.ai-draft-review small{color:#91A4BA;line-height:1.45;}
+.preview-evidence-note{
+  display:grid;
+  grid-template-columns:auto 1fr;
+  gap:3px 14px;
+  align-items:center;
+  margin:14px 0;
+  padding:14px 16px;
+  border:1px solid rgba(56,189,248,.14);
+  border-radius:14px;
+  background:rgba(56,189,248,.035);
+}
+.preview-evidence-note span{grid-row:1 / span 2;color:#38BDF8;font-size:.62rem;font-weight:900;letter-spacing:.08em;}
+.preview-evidence-note strong{font-size:.9rem;}
+.preview-evidence-note small{color:#8FA3BA;line-height:1.45;}
+@media(max-width:720px){
+  .report-context-actions{justify-content:stretch;}
+  .report-context-actions button{width:100%;}
+  .ai-draft-review{align-items:flex-start;flex-direction:column;}
+  .preview-evidence-note{grid-template-columns:1fr;}
+  .preview-evidence-note span{grid-row:auto;}
+}

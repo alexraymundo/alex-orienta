@@ -90,7 +90,7 @@
   <main class="admin-main">
     <header class="admin-header">
       <div>
-        <span class="eyebrow" id="workspaceEyebrow">MI PRÁCTICA · PANEL PROFESIONAL · V8.4</span>
+        <span class="eyebrow" id="workspaceEyebrow">MI PRÁCTICA · PANEL PROFESIONAL · V8.5</span>
         <h1 id="viewTitle">Hoy</h1>
         <p id="workspaceDescription" class="workspace-description">Agenda, personas y seguimiento de tu práctica privada.</p>
       </div>
@@ -513,12 +513,27 @@
       </div>
 
       <section class="report-step active" id="reportStepContext" role="tabpanel">
-        <div class="panel clean-report-step"><span class="eyebrow">PASO 1</span><h3>Revisa la información disponible</h3><p class="muted">Este resumen se genera a partir de observaciones escolares revisadas. Úsalo como contexto antes de redactar el informe.</p><div id="adminSchoolSnapshot" class="snapshot-card compact-snapshot"></div><div class="flow-actions"><button class="primary-btn" data-go-report-step="write">CONTINUAR A REDACTAR</button></div></div>
+        <div class="panel clean-report-step">
+          <span class="eyebrow">PASO 1</span>
+          <h3>Revisa la información disponible</h3>
+          <p class="muted">Este resumen usa únicamente observaciones docentes revisadas y observaciones profesionales que tú decidiste publicar. Las notas privadas nunca se envían a la IA ni al docente.</p>
+          <div id="adminSchoolSnapshot" class="snapshot-card compact-snapshot"></div>
+          <div class="report-context-actions">
+            <button class="secondary-btn" id="addObservationFromReportBtn">+ AGREGAR OBSERVACIÓN</button>
+            <button class="secondary-btn ai-draft-btn" id="generateContinuityAIFromContextBtn">✦ GENERAR BORRADOR CON IA</button>
+            <button class="primary-btn" data-go-report-step="write">CONTINUAR A REDACTAR</button>
+          </div>
+          <div id="continuityAIContextStatus" class="status" role="status" aria-live="polite"></div>
+        </div>
       </section>
 
       <section class="report-step" id="reportStepWrite" role="tabpanel" hidden>
         <div class="panel clean-report-step">
           <span class="eyebrow">PASO 2</span><h3>Redacta información útil para el docente</h3><p class="muted">Solo contenido descriptivo, concreto y aplicable en el aula.</p>
+          <div class="ai-draft-review" id="continuityAIMeta" hidden>
+            <div><span class="eyebrow">NORTIA · BORRADOR ASISTIDO</span><strong id="continuityAIEvidence">Datos iniciales</strong><small id="continuityAINote">Revisa y edita todo antes de publicar.</small></div>
+            <button class="text-action" id="regenerateContinuityAI">Regenerar borrador</button>
+          </div>
           <div class="form-stack clean-writing-form">
             <label>Descripción general<textarea id="contGeneral" rows="4" placeholder="Panorama breve y descriptivo del alumno en el contexto escolar."></textarea></label>
             <label>Fortalezas observadas<textarea id="contStrengths" rows="3" placeholder="Capacidades, intereses y respuestas positivas observadas."></textarea></label>

@@ -1764,6 +1764,93 @@ function renderAdminSnapshot(s) {
   return `<div class="mini-snapshot-grid"><article><span>Registros considerados</span><strong>${s.observation_count}</strong><small>${Number(s.teacher_count||0)} docentes · ${Number(s.professional_count||0)} profesional</small></article><article><span>Área con más apoyo registrado</span><strong>${escapeHTML(top.label)}</strong></article><article><span>Último registro</span><strong>${s.last_reviewed_at ? new Date(s.last_reviewed_at).toLocaleDateString() : "—"}</strong></article></div>`;
 }
 
+
+function continuityEvidenceLabel(snapshot) {
+  const n = Number(snapshot?.observation_count || 0);
+  if (n <= 0) return { label: "Sin evidencia escolar", note: "Registra y revisa al menos una observación antes de generar un borrador." };
+  if (n <= 2) return { label: "Datos iniciales", note: `Borrador basado en ${n} registro${n===1?"":"s"}. No representa una tendencia.` };
+  if (n <= 5) return { label: "Patrón emergente", note: `Hay ${n} registros. Las coincidencias todavía deben seguir verificándose.` };
+  return { label: "Mayor consistencia", note: `Hay ${n} registros disponibles. Sigue siendo información descriptiva, no diagnóstica.` };
+}
+
+function continuityHasText() {
+  return ["#contGeneral","#contStrengths","#contSupport","#contStrategies","#contWatch"]
+    .some(selector => ($(selector)?.value || "").trim());
+}
+
+function applyContinuityAIDraft(data) {
+  const d = data?.draft || {};
+  $("#contGeneral").value = d.general_description || "";
+  $("#contStrengths").value = d.strengths || "";
+  $("#contSupport").value = d.support_needs || "";
+  $("#contStrategies").value = d.strategies || "";
+  $("#contWatch").value = d.watch_items || "";
+  const meta = $("#continuityAIMeta");
+  if (meta) {
+    meta.hidden = false;
+    $("#continuityAIEvidence").textContent = data?.evidence_label || continuityEvidenceLabel(currentContinuityData?.snapshot).label;
+    $("#continuityAINote").textContent = data?.review_note || "Borrador generado con IA. Revisa y edita todo antes de publicar.";
+  }
+  if (currentContinuityData) renderTeacherReportPreview(currentContinuityData, true);
+}
+
+async function generateContinuityAIDraft() {
+  const personId = $("#continuityPerson")?.value;
+  const status = $("#continuityAIContextStatus");
+  if (!personId) {
+    if (status) status.textContent = "Selecciona un alumno primero.";
+    return;
+  }
+  if (continuityHasText()) {
+    const replace = confirm("La IA reemplazará el texto que está actualmente en los campos del borrador. ¿Continuar?");
+    if (!replace) return;
+  }
+  const buttons = [$("#generateContinuityAIFromContextBtn"), $("#regenerateContinuityAI")].filter(Boolean);
+  buttons.forEach(b => { b.disabled = true; b.dataset.oldText = b.textContent; b.textContent = "GENERANDO…"; });
+  if (status) { status.style.color = ""; status.textContent = "NORTIA está organizando únicamente las observaciones escolares autorizadas…"; }
+  try {
+    const data = await api("/api/admin/school-continuity/ai-draft", {
+      method: "POST",
+      body: JSON.stringify({ person_id: personId })
+    });
+    applyContinuityAIDraft(data);
+    setReportStep("write");
+    if (status) { status.style.color = "#86EFAC"; status.textContent = "Borrador generado. Revísalo y edítalo antes de publicarlo."; }
+  } catch (e) {
+    if (status) { status.style.color = "#FDA4AF"; status.textContent = e.message; }
+    else adminToast(e.message, "error");
+  } finally {
+    buttons.forEach(b => { b.disabled = false; b.textContent = b.dataset.oldText || "GENERAR BORRADOR CON IA"; delete b.dataset.oldText; });
+  }
+}
+
+async function openProfessionalObservationFromReport() {
+  const personId = $("#continuityPerson")?.value;
+  if (!personId) {
+    $("#continuityAIContextStatus").textContent = "Selecciona un alumno primero.";
+    return;
+  }
+  const selected = $("#continuityPerson")?.selectedOptions?.[0];
+  openAdminTab("observations");
+  const proTab = document.querySelector('[data-observation-source="professional"]');
+  proTab?.click();
+  const target = $("#professionalObservationStudent");
+  if (target) {
+    let opt = Array.from(target.options).find(o => o.value === personId);
+    if (!opt) {
+      opt = new Option(selected?.textContent || "Alumno seleccionado", personId, true, true);
+      target.add(opt);
+    }
+    target.value = personId;
+    target.dispatchEvent(new Event("change"));
+  }
+  setTimeout(() => $("#pObsDescription")?.focus(), 80);
+}
+
+$("#generateContinuityAIFromContextBtn")?.addEventListener("click", generateContinuityAIDraft);
+$("#regenerateContinuityAI")?.addEventListener("click", generateContinuityAIDraft);
+$("#addObservationFromReportBtn")?.addEventListener("click", openProfessionalObservationFromReport);
+
 function continuityFields() {
   return {
     general_description: $("#contGeneral").value,
@@ -1811,6 +1898,7 @@ function renderTeacherReportPreview(data, useCurrentFields = false) {
     </div>
     <section class="preview-chart-card"><h4>Áreas observadas <small>solo se muestran tendencias con ≥3 registros por área</small></h4>${bars}</section>
     <section class="preview-chart-card"><h4>Contextos registrados</h4>${contexts}</section>
+    <div class="preview-evidence-note"><span>NIVEL DE EVIDENCIA</span><strong>${escapeHTML(continuityEvidenceLabel(s).label)}</strong><small>${escapeHTML(continuityEvidenceLabel(s).note)}</small></div>
     <div class="preview-text-grid">${sections}</div>
     <div class="preview-disclaimer">Información descriptiva para continuidad escolar. No constituye diagnóstico ni evaluación clínica.</div>
   `;
@@ -1830,6 +1918,8 @@ $("#continuityPerson").addEventListener("change", async () => {
     $("#contStrategies").value = c.strategies || "";
     $("#contWatch").value = c.watch_items || "";
     $("#contApprove").checked = false;
+    if ($("#continuityAIMeta")) $("#continuityAIMeta").hidden = true;
+    if ($("#continuityAIContextStatus")) $("#continuityAIContextStatus").textContent = "";
     const hasPublished = !!d.published?.approved_at;
     $("#continuityDraftState").textContent = d.has_draft ? (hasPublished ? "BORRADOR · PUBLICADO SE CONSERVA" : "BORRADOR") : (hasPublished ? "PUBLICADO" : "BORRADOR");
     $("#continuityDraftState").classList.toggle("published", hasPublished && !d.has_draft);
