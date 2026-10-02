@@ -47,38 +47,42 @@
       </div>
     </div>
 
-    <div class="workspace-switcher" aria-label="Cambiar de espacio">
-      <button id="workspacePracticeBtn" class="workspace-choice active" type="button">
-        <span class="workspace-choice-mark">A</span>
-        <span><strong>Mi práctica</strong><small>Trabajo profesional privado</small></span>
-      </button>
-      <button id="workspaceCidebBtn" class="workspace-choice school" type="button">
-        <span class="workspace-choice-mark">C</span>
-        <span><strong>CIDEB</strong><small>Seguimiento escolar</small></span>
-      </button>
+    <div class="sidebar-scroll-area">
+      <div class="workspace-switcher" aria-label="Cambiar de espacio">
+        <button id="workspacePracticeBtn" class="workspace-choice active" type="button">
+          <span class="workspace-choice-mark">A</span>
+          <span><strong>Mi práctica</strong><small>Trabajo profesional privado</small></span>
+        </button>
+        <button id="workspaceCidebBtn" class="workspace-choice school" type="button">
+          <span class="workspace-choice-mark">C</span>
+          <span><strong>CIDEB</strong><small>Seguimiento escolar</small></span>
+        </button>
+      </div>
+
+      <nav id="practiceNav" class="workspace-nav">
+        <div class="sidebar-section-label">MI PRÁCTICA</div>
+        <button class="nav-btn active" data-tab="dashboard">Hoy</button>
+        <button class="nav-btn" data-tab="agenda">Agenda</button>
+        <button class="nav-btn" data-tab="people">Personas</button>
+        <button class="nav-btn" data-tab="vocational">Mapa vocacional</button>
+        <button class="nav-btn" data-tab="ai">NORTIA Reflexión</button>
+        <button class="nav-btn" data-tab="notifications">Notificaciones <span class="notification-badge" id="notificationBadge" hidden>0</span></button>
+        <button class="nav-btn" data-tab="security">Seguridad</button>
+      </nav>
+
+      <nav id="cidebNav" class="workspace-nav" hidden>
+        <div class="sidebar-section-label">CIDEB · ESCOLAR</div>
+        <button class="nav-btn cideb-nav-btn active" data-tab="cideb"><span>Resumen</span></button>
+        <button class="nav-btn" data-tab="students">Alumnos</button>
+        <button class="nav-btn" data-tab="teachers">Docentes</button>
+        <button class="nav-btn" data-tab="coordination">Coordinación</button>
+        <button class="nav-btn" data-tab="observations">Observaciones</button>
+        <button class="nav-btn" data-tab="continuity">Informes para docentes</button>
+        <button class="nav-btn" data-tab="families">Familias</button>
+        <button class="nav-btn" data-tab="cideb-security">Seguridad CIDEB</button>
+      </nav>
+
     </div>
-
-    <nav id="practiceNav" class="workspace-nav">
-      <div class="sidebar-section-label">MI PRÁCTICA</div>
-      <button class="nav-btn active" data-tab="dashboard">Hoy</button>
-      <button class="nav-btn" data-tab="agenda">Agenda</button>
-      <button class="nav-btn" data-tab="people">Personas</button>
-      <button class="nav-btn" data-tab="vocational">Mapa vocacional</button>
-      <button class="nav-btn" data-tab="ai">NORTIA Reflexión</button>
-      <button class="nav-btn" data-tab="notifications">Notificaciones <span class="notification-badge" id="notificationBadge" hidden>0</span></button>
-      <button class="nav-btn" data-tab="security">Seguridad</button>
-    </nav>
-
-    <nav id="cidebNav" class="workspace-nav" hidden>
-      <div class="sidebar-section-label">CIDEB · ESCOLAR</div>
-      <button class="nav-btn cideb-nav-btn active" data-tab="cideb"><span>Resumen</span></button>
-      <button class="nav-btn" data-tab="students">Alumnos</button>
-      <button class="nav-btn" data-tab="teachers">Docentes</button>
-      <button class="nav-btn" data-tab="observations">Observaciones</button>
-      <button class="nav-btn" data-tab="continuity">Informes para docentes</button>
-      <button class="nav-btn" data-tab="families">Familias</button>
-      <button class="nav-btn" data-tab="cideb-security">Seguridad CIDEB</button>
-    </nav>
 
     <button class="nav-btn logout" id="logoutBtn">Cerrar sesión</button>
   </aside>
@@ -86,7 +90,7 @@
   <main class="admin-main">
     <header class="admin-header">
       <div>
-        <span class="eyebrow" id="workspaceEyebrow">MI PRÁCTICA · PANEL PROFESIONAL</span>
+        <span class="eyebrow" id="workspaceEyebrow">MI PRÁCTICA · PANEL PROFESIONAL · V8.4</span>
         <h1 id="viewTitle">Hoy</h1>
         <p id="workspaceDescription" class="workspace-description">Agenda, personas y seguimiento de tu práctica privada.</p>
       </div>
@@ -392,7 +396,7 @@
           <div class="directory-actions">
             <button class="secondary-btn" id="openImportStudentsBtn">IMPORTAR CSV</button>
             <button class="secondary-btn" id="exportCidebDirectoryBtn" title="Exporta todos los alumnos que coinciden con los filtros actuales">EXPORTAR CSV</button>
-            <button class="secondary-btn" id="openCycleBtn">NUEVO CICLO</button>
+            <button class="secondary-btn" id="openCycleBtn">NUEVO PERIODO</button>
             <button class="primary-btn" id="openNewCidebStudentBtn">+ AGREGAR ALUMNO</button>
           </div>
         </div>
@@ -404,7 +408,7 @@
             <span>⌕</span>
             <input id="cidebStudentSearch" aria-label="Buscar alumno CIDEB" autocomplete="off" placeholder="Nombre, matrícula, grado o grupo...">
           </div>
-          <select id="cidebYearFilter" aria-label="Filtrar por ciclo escolar"><option value="">Todos los ciclos</option></select>
+          <select id="cidebYearFilter" aria-label="Filtrar por periodo escolar"><option value="">Todos los periodos</option></select>
           <select id="cidebGradeFilter" aria-label="Filtrar por grado"><option value="">Todos los grados</option></select>
           <select id="cidebGroupFilter" aria-label="Filtrar por grupo"><option value="">Todos los grupos</option></select>
           <select id="cidebTeacherFilter" aria-label="Filtrar por docente"><option value="">Todos los docentes</option></select>
@@ -442,14 +446,30 @@
         <div id="teacherManageSummary" class="access-summary"></div>
         <div id="teacherAssignmentsList" class="admin-record-list"></div>
         <hr class="soft-rule">
-        <div class="admin-form-grid"><label>Buscar alumno<input id="teacherAssignSearch" placeholder="Nombre o matrícula…" autocomplete="off"></label><label>Asignar alumno<select id="teacherAssignStudent"><option value="">Escribe para buscar</option></select></label><label>Ciclo escolar<input id="teacherAssignYear" placeholder="2026–2027"></label><button class="secondary-btn" id="assignTeacherStudentBtn">ASIGNAR ALUMNO</button></div>
+        <div class="admin-form-grid"><label>Buscar alumno sin maestro<input id="teacherAssignSearch" placeholder="Nombre o matrícula…" autocomplete="off"></label><label>Alumno<select id="teacherAssignStudent"><option value="">Escribe para buscar</option></select></label><button class="secondary-btn" id="assignTeacherStudentBtn">ASIGNAR COMO MAESTRO ACTUAL</button></div><p class="form-help">Si el alumno ya tiene maestro actual, haz el cambio desde la ficha del alumno con <b>Transferir docente</b>.</p>
         <div class="data-action-row"><button class="secondary-btn" id="toggleTeacherAccessBtn">DESACTIVAR ACCESO</button><button class="secondary-btn" id="regenTeacherCodeBtn">REGENERAR CÓDIGO</button></div>
         <div id="teacherManageCode" class="access-code-result" hidden></div><div id="teacherManageStatus" class="status"></div>
       </div>
       <div class="panel clean-form-panel" id="teacherCreatePanel" hidden>
-        <div class="panel-head"><div><span class="eyebrow">NUEVO ACCESO</span><h3>Crear docente y asignación</h3></div><button class="text-action" id="cancelNewTeacherBtn">Cancelar</button></div>
-        <div class="admin-form-grid"><label>Nombre del docente<input id="teacherName"></label><label>Correo<input id="teacherEmail" type="email"></label><label>Escuela<input id="teacherSchool" value="CIDEB"></label><label>Buscar alumno<input id="teacherStudentSearchAdmin" aria-label="Buscar alumno para docente" placeholder="Escribe nombre o matrícula…" autocomplete="off"></label><label>Alumno<select id="teacherStudent"><option value="">Escribe para buscar</option></select></label><label>Ciclo escolar<input id="teacherYear" placeholder="2026–2027"></label><button class="primary-btn" id="createTeacherBtn">CREAR ACCESO DOCENTE</button></div>
+        <div class="panel-head"><div><span class="eyebrow">NUEVO ACCESO</span><h3>Crear acceso docente</h3><p class="muted">Primero crea el acceso. La asignación de alumnos se maneja aparte para mantener un solo maestro actual por alumno.</p></div><button class="text-action" id="cancelNewTeacherBtn">Cancelar</button></div>
+        <div class="admin-form-grid"><label>Nombre del docente<input id="teacherName"></label><label>Correo<input id="teacherEmail" type="email"></label><label>Escuela<input id="teacherSchool" value="CIDEB"></label><button class="primary-btn" id="createTeacherBtn">CREAR ACCESO DOCENTE</button></div>
         <div id="teacherCreateResult" class="access-code-result" hidden></div><div id="teacherAdminStatus" class="status"></div>
+      </div>
+    </section>
+
+    <section class="admin-view" id="view-coordination">
+      <div class="clean-page-head">
+        <div><span class="eyebrow">CIDEB · COORDINACIÓN</span><h2>Coordinación escolar</h2><p class="muted">Acceso restringido para coordinación o dirección. Puede consultar todos los alumnos CIDEB y transferir el maestro actual, sin acceso a tu práctica privada, IA ni notas internas.</p></div>
+        <button class="primary-btn" id="showNewCoordinatorBtn">+ NUEVO ACCESO</button>
+      </div>
+      <div class="panel" id="coordinatorListPanel">
+        <div class="panel-head"><div><h3>Accesos de coordinación</h3><p class="muted">Cada acceso es individual, revocable y queda registrado en auditoría.</p></div></div>
+        <div id="adminCoordinatorsList" class="admin-record-list"></div>
+      </div>
+      <div class="panel clean-form-panel" id="coordinatorCreatePanel" hidden>
+        <div class="panel-head"><div><span class="eyebrow">NUEVO ACCESO</span><h3>Crear acceso de coordinación</h3></div><button class="text-action" id="cancelNewCoordinatorBtn">Cancelar</button></div>
+        <div class="admin-form-grid"><label>Nombre completo<input id="coordinatorName"></label><label>Correo<input id="coordinatorEmail" type="email"></label><label>Escuela<input id="coordinatorSchool" value="CIDEB"></label><button class="primary-btn" id="createCoordinatorBtn">CREAR ACCESO</button></div>
+        <div id="coordinatorCreateResult" class="access-code-result" hidden></div><div id="coordinatorAdminStatus" class="status"></div>
       </div>
     </section>
 
@@ -458,9 +478,24 @@
       <div class="segmented-tabs" id="observationSourceTabs" role="tablist" aria-label="Origen de observaciones">
         <button class="active" role="tab" aria-selected="true" aria-controls="teacherObservationPanel" data-observation-source="teacher">Docentes</button>
         <button role="tab" aria-selected="false" aria-controls="familyObservationPanel" data-observation-source="family">Familias</button>
+        <button role="tab" aria-selected="false" aria-controls="professionalObservationPanel" data-observation-source="professional">Mis observaciones</button>
       </div>
       <div class="panel observation-source-panel active" id="teacherObservationPanel" role="tabpanel"><div class="panel-head"><div><h3>Observaciones docentes</h3><p class="muted">Registros enviados por maestros y pendientes de tu revisión.</p></div></div><div id="adminTeacherObservations"></div></div>
       <div class="panel observation-source-panel" id="familyObservationPanel" role="tabpanel" hidden><div class="panel-head"><div><h3>Observaciones familiares</h3><p class="muted">Registros enviados desde el Portal Familiar.</p></div></div><div id="adminFamilyObservations"></div></div>
+      <div class="observation-source-panel" id="professionalObservationPanel" role="tabpanel" hidden>
+        <div class="panel professional-observation-editor">
+          <div class="panel-head"><div><span class="eyebrow">ALEX · OBSERVACIÓN PROFESIONAL</span><h3>Registrar lo que tú detectas</h3><p class="muted">Puedes guardarlo privado o publicarlo para que lo vean los docentes asignados. Si registras áreas observadas y lo publicas, también alimentará las gráficas del informe.</p></div><span class="report-safety-pill">DESCRIPTIVO</span></div>
+          <div class="admin-form-grid professional-student-picker"><label>Buscar alumno<input id="professionalObservationStudentSearch" aria-label="Buscar alumno para observación profesional" placeholder="Nombre o matrícula…" autocomplete="off"></label><label>Alumno<select id="professionalObservationStudent"><option value="">Escribe para buscar</option></select></label></div>
+          <div class="two-cols"><label>Fecha<input id="pObsDate" type="date"></label><label>Materia / espacio<input id="pObsSubject" placeholder="Ej. Sesión de seguimiento"></label></div>
+          <label>Contexto<select id="pObsContext"><option value="Seguimiento profesional">Seguimiento profesional</option><option value="Clase">Clase</option><option value="Trabajo individual">Trabajo individual</option><option value="Trabajo en equipo">Trabajo en equipo</option><option value="Evaluación">Evaluación</option><option value="Recreo">Recreo</option><option value="Cambio de actividad">Cambio de actividad</option><option value="Otro">Otro</option></select></label>
+          <details class="observation-rating-details"><summary>Áreas observadas <small>Opcional · solo lo que realmente observaste</small></summary><p class="rating-help">Las áreas sin registrar no afectan las gráficas.</p><div class="rating-grid" id="professionalRatings"></div></details>
+          <label>¿Qué observaste?<textarea id="pObsDescription" rows="4" placeholder="Describe hechos observables, sin diagnóstico ni etiquetas."></textarea></label>
+          <details class="observation-extra-details"><summary>Agregar estrategia o recomendación <small>Opcional</small></summary><div class="form-stack"><label>Estrategia que funcionó<textarea id="pObsStrategy" rows="3"></textarea></label><label>Recomendación para el docente<textarea id="pObsRecommendation" rows="3"></textarea></label></div></details>
+          <label class="toggle-line professional-publish-toggle"><input id="pObsPublish" type="checkbox"><span><strong>Publicar para docentes asignados</strong><small>Si está apagado, queda como registro privado de Alex y no entra a las gráficas.</small></span></label>
+          <div class="observation-submit-row"><div id="professionalObsStatus" class="status"></div><button class="primary-btn" id="saveProfessionalObservation">GUARDAR OBSERVACIÓN</button></div>
+        </div>
+        <div class="panel professional-observation-history"><div class="panel-head"><div><h3>Mis observaciones del alumno</h3><p class="muted">Puedes publicar, ocultar o eliminar tus registros cuando sea necesario.</p></div></div><div id="adminProfessionalObservations"><p class="muted">Selecciona un alumno.</p></div></div>
+      </div>
     </section>
 
     <section class="admin-view" id="view-continuity">
@@ -677,7 +712,7 @@
     <h2>Crear ficha escolar</h2>
     <form id="cidebStudentForm" class="form-stack">
       <div class="two-cols"><label>Nombre completo<input name="full_name" required></label><label>Matrícula / ID<input name="student_number" required></label></div>
-      <div class="three-cols"><label>Grado<input name="grade_level"></label><label>Grupo<input name="group_name"></label><label>Ciclo escolar<input name="school_year" placeholder="2026–2027" required></label></div>
+      <div class="three-cols"><label>Grado<input name="grade_level"></label><label>Grupo<input name="group_name"></label><label>Periodo escolar<input name="school_year" placeholder="2027-1" required></label></div>
       <details class="optional-fields"><summary>Datos de contacto opcionales</summary><div class="two-cols"><label>Edad<input name="age" type="number"></label><label>Teléfono<input name="phone"></label></div><label>Correo<input name="email" type="email"></label></details>
       <button class="primary-btn full" type="submit">CREAR ALUMNO</button>
       <div id="cidebStudentFormStatus" class="status"></div>
@@ -691,7 +726,7 @@
     <button class="modal-close" type="button" aria-label="Cerrar" data-close-cideb-import>×</button>
     <span class="eyebrow">CIDEB · CARGA MASIVA</span>
     <h2>Importar alumnos desde CSV</h2>
-    <p class="muted">Columnas esperadas: <b>matricula, nombre, edad, grado, grupo, ciclo, correo, telefono</b>. Matrícula, nombre y ciclo son obligatorios.</p>
+    <p class="muted">Columnas esperadas: <b>matricula, nombre, edad, grado, grupo, ciclo, correo, telefono</b>. En la columna ciclo usa el periodo, por ejemplo <b>2027-1</b> o <b>2027-2</b>. Matrícula, nombre y periodo son obligatorios.</p>
     <label class="file-drop">Seleccionar archivo CSV<input id="cidebCsvFile" type="file" accept=".csv,text/csv"></label>
     <div id="cidebImportPreview" class="import-preview"></div>
     <button class="primary-btn full" id="runCidebImportBtn" disabled>IMPORTAR FILAS VÁLIDAS</button>
@@ -699,15 +734,35 @@
   </div>
 </div>
 
+<div class="modal" id="teacherTransferModal" hidden>
+  <div class="modal-backdrop" data-close-teacher-transfer></div>
+  <div class="modal-card clean-modal-card transfer-modal-card" role="dialog" aria-modal="true" aria-labelledby="teacherTransferTitle">
+    <button class="modal-close" type="button" aria-label="Cerrar" data-close-teacher-transfer>×</button>
+    <span class="eyebrow">CIDEB · CONTINUIDAD</span>
+    <h2 id="teacherTransferTitle">Transferir docente actual</h2>
+    <p class="muted">El alumno conserva una sola ficha. El maestro anterior pierde acceso y el nuevo recibe únicamente la continuidad escolar publicada.</p>
+    <div class="transfer-summary-grid">
+      <article><span>Alumno</span><strong id="transferStudentName">—</strong></article>
+      <article><span>Maestro actual</span><strong id="transferCurrentTeacher">Sin asignar</strong></article>
+      <article><span>Periodo</span><strong id="transferPeriod">—</strong></article>
+    </div>
+    <div id="transferContinuityPreview" class="transfer-continuity-preview"></div>
+    <label>Nuevo maestro<select id="transferToTeacher"><option value="">Selecciona docente</option></select></label>
+    <label>Nota administrativa para la transferencia <textarea id="transferNote" rows="3" placeholder="Opcional. Ej. Cambio de grupo o inicio de nuevo periodo."></textarea></label>
+    <div class="transfer-actions"><button class="primary-btn" id="confirmTeacherTransferBtn">CONFIRMAR TRANSFERENCIA</button><button class="text-action danger-text" id="undoLastTransferBtn" hidden>Deshacer última transferencia</button></div>
+    <div id="teacherTransferStatus" class="status"></div>
+  </div>
+</div>
+
 <div class="modal" id="cidebCycleModal" hidden>
   <div class="modal-backdrop" data-close-cideb-cycle></div>
   <div class="modal-card clean-modal-card">
     <button class="modal-close" type="button" aria-label="Cerrar" data-close-cideb-cycle>×</button>
-    <span class="eyebrow">CIDEB · CICLO ESCOLAR</span>
-    <h2>Iniciar nuevo ciclo</h2>
-    <p class="muted">Se conserva el historial. Las asignaciones docentes del ciclo anterior se cierran y grado/grupo quedan marcados para revisión; NORTIA no intenta adivinar la promoción del alumno.</p>
-    <div class="two-cols"><label>Ciclo actual<input id="cycleFrom" placeholder="2026–2027"></label><label>Nuevo ciclo<input id="cycleTo" placeholder="2027–2028"></label></div>
-    <button class="primary-btn full" id="advanceCycleBtn">CREAR NUEVO CICLO</button>
+    <span class="eyebrow">CIDEB · PERIODO ESCOLAR</span>
+    <h2>Cambiar periodo actual</h2>
+    <p class="muted">Cada alumno conserva una sola ficha. El periodo se actualiza en esa misma ficha y el maestro actual se mantiene hasta que decidas transferirlo. Usa, por ejemplo, <b>2027-1</b> para enero–junio y <b>2027-2</b> para agosto–diciembre.</p>
+    <div class="two-cols"><label>Periodo actual<input id="cycleFrom" placeholder="2026-2"></label><label>Nuevo periodo<input id="cycleTo" placeholder="2027-1"></label></div>
+    <button class="primary-btn full" id="advanceCycleBtn">APLICAR NUEVO PERIODO</button>
     <div id="cycleStatus" class="status"></div>
   </div>
 </div>

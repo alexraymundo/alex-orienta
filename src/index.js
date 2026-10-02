@@ -648,6 +648,7 @@ async function createNotification(env, {
 
 const TEACHER_AGREEMENT_VERSION = "2.0";
 const FAMILY_AGREEMENT_VERSION = "2.0";
+const COORDINATOR_AGREEMENT_VERSION = "1.0";
 const PUBLIC_PRIVACY_VERSION = "2.0";
 const AI_CONSENT_VERSION = "2.0";
 
@@ -745,12 +746,17 @@ async function ensureSchoolModuleTables(env) {
   const statements = [
     `CREATE TABLE IF NOT EXISTS person_programs (person_id TEXT PRIMARY KEY, therapy_with_alex INTEGER NOT NULL DEFAULT 0, school_followup INTEGER NOT NULL DEFAULT 0, school_name TEXT, grade_level TEXT, school_year TEXT, updated_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
     `CREATE TABLE IF NOT EXISTS teachers (id TEXT PRIMARY KEY, full_name TEXT NOT NULL, email TEXT, school_name TEXT, access_hash TEXT NOT NULL, access_hint TEXT, active INTEGER NOT NULL DEFAULT 1, agreement_version TEXT NOT NULL DEFAULT '1.0', agreement_accepted_at TEXT, agreement_signed_name TEXT, last_login_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS coordinators (id TEXT PRIMARY KEY, full_name TEXT NOT NULL, email TEXT, school_name TEXT NOT NULL DEFAULT 'CIDEB', access_hash TEXT NOT NULL, access_hint TEXT, active INTEGER NOT NULL DEFAULT 1, agreement_version TEXT NOT NULL DEFAULT '1.0', agreement_accepted_at TEXT, agreement_signed_name TEXT, last_login_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS teacher_assignments (teacher_id TEXT NOT NULL, person_id TEXT NOT NULL, school_year TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, PRIMARY KEY(teacher_id, person_id, school_year), FOREIGN KEY(teacher_id) REFERENCES teachers(id) ON DELETE CASCADE, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
     `CREATE TABLE IF NOT EXISTS teacher_observations (id TEXT PRIMARY KEY, teacher_id TEXT NOT NULL, person_id TEXT NOT NULL, observation_date TEXT NOT NULL, subject TEXT, context TEXT, attention_support INTEGER, instructions_support INTEGER, organization_support INTEGER, peer_support INTEGER, frustration_support INTEGER, transitions_support INTEGER, autonomy_support INTEGER, help_seeking_support INTEGER, description TEXT NOT NULL, antecedent TEXT, strategy_used TEXT, result_text TEXT, additional_comments TEXT, status TEXT NOT NULL DEFAULT 'submitted', private_note TEXT, professional_comment TEXT, reviewed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(teacher_id) REFERENCES teachers(id) ON DELETE CASCADE, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
+    `CREATE TABLE IF NOT EXISTS professional_school_observations (id TEXT PRIMARY KEY, person_id TEXT NOT NULL, observation_date TEXT NOT NULL, subject TEXT, context TEXT, attention_support INTEGER, instructions_support INTEGER, organization_support INTEGER, peer_support INTEGER, frustration_support INTEGER, transitions_support INTEGER, autonomy_support INTEGER, help_seeking_support INTEGER, description TEXT NOT NULL, strategy_used TEXT, recommendation_text TEXT, visible_to_teachers INTEGER NOT NULL DEFAULT 0, published_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
     `CREATE TABLE IF NOT EXISTS school_continuity (person_id TEXT PRIMARY KEY, general_description TEXT, strengths TEXT, support_needs TEXT, strategies TEXT, watch_items TEXT, approved_at TEXT, updated_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
     `CREATE TABLE IF NOT EXISTS guardians (id TEXT PRIMARY KEY, person_id TEXT NOT NULL, full_name TEXT NOT NULL, relationship TEXT, email TEXT, access_hash TEXT NOT NULL, access_hint TEXT, active INTEGER NOT NULL DEFAULT 1, agreement_version TEXT NOT NULL DEFAULT '1.0', agreement_accepted_at TEXT, agreement_signed_name TEXT, last_login_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
     `CREATE TABLE IF NOT EXISTS family_profiles (person_id TEXT PRIMARY KEY, summary TEXT, strengths TEXT, current_goals TEXT, recommendations_home TEXT, updated_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
     `CREATE TABLE IF NOT EXISTS family_observations (id TEXT PRIMARY KEY, guardian_id TEXT NOT NULL, person_id TEXT NOT NULL, observation_date TEXT NOT NULL, context TEXT, observation_text TEXT NOT NULL, what_helped TEXT, questions TEXT, status TEXT NOT NULL DEFAULT 'submitted', private_note TEXT, professional_comment TEXT, reviewed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(guardian_id) REFERENCES guardians(id) ON DELETE CASCADE, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
+    `CREATE TABLE IF NOT EXISTS teacher_transfers (id TEXT PRIMARY KEY, person_id TEXT NOT NULL, from_teacher_id TEXT, to_teacher_id TEXT NOT NULL, transfer_date TEXT NOT NULL, school_period TEXT, general_description TEXT, strengths TEXT, support_needs TEXT, strategies TEXT, watch_items TEXT, transfer_note TEXT, created_by_role TEXT NOT NULL, created_by_id TEXT, created_at TEXT NOT NULL, undone_at TEXT, undone_by_role TEXT, undone_by_id TEXT, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE, FOREIGN KEY(from_teacher_id) REFERENCES teachers(id) ON DELETE SET NULL, FOREIGN KEY(to_teacher_id) REFERENCES teachers(id) ON DELETE SET NULL)`,
+    `CREATE INDEX IF NOT EXISTS idx_teacher_transfers_person ON teacher_transfers(person_id, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_teacher_transfers_to_teacher ON teacher_transfers(to_teacher_id, person_id, created_at DESC)`,
     `CREATE TABLE IF NOT EXISTS audit_log (id TEXT PRIMARY KEY, actor_role TEXT NOT NULL, actor_id TEXT, action TEXT NOT NULL, person_id TEXT, detail TEXT, created_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE SET NULL)`
   ];
   for (const sql of statements) await env.DB.prepare(sql).run();
@@ -890,7 +896,7 @@ async function getInstitutionPeople(env,institution='CIDEB'){
 async function institutionPreview(env,institution='CIDEB'){
   const people=await getInstitutionPeople(env,institution),ids=people.map(x=>x.id),needle=`%${String(institution).toLowerCase()}%`;
   const tr=await env.DB.prepare(`SELECT COUNT(*) AS count FROM teachers WHERE LOWER(COALESCE(school_name,'')) LIKE ? AND active=1`).bind(needle).first();
-  if(!ids.length)return{institution,people:0,school_only:0,private_therapy_preserved:0,active_teachers:Number(tr?.count||0),teacher_assignments:0,teacher_observations:0,continuity_records:0,family_accesses:0};
+  if(!ids.length){const cr=await env.DB.prepare(`SELECT COUNT(*) AS count FROM coordinators WHERE LOWER(COALESCE(school_name,'')) LIKE ? AND active=1`).bind(needle).first();return{institution,people:0,school_only:0,private_therapy_preserved:0,active_teachers:Number(tr?.count||0),active_coordinators:Number(cr?.count||0),teacher_assignments:0,teacher_observations:0,continuity_records:0,family_accesses:0};}
   const marks=ids.map(()=>'?').join(',');
   const [a,o,c,f]=await Promise.all([
     env.DB.prepare(`SELECT COUNT(*) AS count FROM teacher_assignments WHERE person_id IN (${marks}) AND active=1`).bind(...ids).first(),
@@ -898,7 +904,8 @@ async function institutionPreview(env,institution='CIDEB'){
     env.DB.prepare(`SELECT COUNT(*) AS count FROM school_continuity WHERE person_id IN (${marks}) AND approved_at IS NOT NULL`).bind(...ids).first(),
     env.DB.prepare(`SELECT COUNT(*) AS count FROM guardians WHERE person_id IN (${marks}) AND active=1`).bind(...ids).first()
   ]);
-  return{institution,people:people.length,school_only:people.filter(x=>!Number(x.therapy_with_alex)).length,private_therapy_preserved:people.filter(x=>Number(x.therapy_with_alex)).length,active_teachers:Number(tr?.count||0),teacher_assignments:Number(a?.count||0),teacher_observations:Number(o?.count||0),continuity_records:Number(c?.count||0),family_accesses:Number(f?.count||0)};
+  const cr=await env.DB.prepare(`SELECT COUNT(*) AS count FROM coordinators WHERE LOWER(COALESCE(school_name,'')) LIKE ? AND active=1`).bind(needle).first();
+  return{institution,people:people.length,school_only:people.filter(x=>!Number(x.therapy_with_alex)).length,private_therapy_preserved:people.filter(x=>Number(x.therapy_with_alex)).length,active_teachers:Number(tr?.count||0),active_coordinators:Number(cr?.count||0),teacher_assignments:Number(a?.count||0),teacher_observations:Number(o?.count||0),continuity_records:Number(c?.count||0),family_accesses:Number(f?.count||0)};
 }
 function generateRoleAccessCode(prefix) {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -916,10 +923,15 @@ async function createSignedRoleSession(env, role, actorId) {
   return `${actorId}.${expiresAt}.${signature}`;
 }
 
+function roleCookieName(role) {
+  return ({ teacher: "nortia_teacher", family: "nortia_family", coordinator: "nortia_coordinator" })[role] || "";
+}
+
 async function getSignedRoleSession(req, env, role) {
-  const cookieName = role === "teacher" ? "nortia_teacher" : "nortia_family";
+  const cookieName = roleCookieName(role);
+  if (!cookieName) return null;
   const cookie = req.headers.get("cookie") || "";
-  const match = cookie.match(new RegExp(`(?:^|;\\s*)${cookieName}=([^;]+)`));
+  const match = cookie.match(new RegExp(`(?:^|;\s*)${cookieName}=([^;]+)`));
   if (!match) return null;
   const [actorId, expiresAt, signature] = match[1].split(".");
   if (!actorId || !expiresAt || !signature || Number(expiresAt) <= Date.now()) return null;
@@ -929,12 +941,12 @@ async function getSignedRoleSession(req, env, role) {
 }
 
 function roleCookie(role, token) {
-  const name = role === "teacher" ? "nortia_teacher" : "nortia_family";
+  const name = roleCookieName(role);
   return `${name}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=43200`;
 }
 
 function clearRoleCookie(role) {
-  const name = role === "teacher" ? "nortia_teacher" : "nortia_family";
+  const name = roleCookieName(role);
   return `${name}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`;
 }
 
@@ -956,12 +968,102 @@ async function assertTherapyAI(env, personId) {
 }
 
 async function teacherAssignment(env, teacherId, personId) {
-  return env.DB.prepare(`SELECT ta.* FROM teacher_assignments ta JOIN people p ON p.id=ta.person_id LEFT JOIN person_programs pp ON pp.person_id=p.id WHERE ta.teacher_id=? AND ta.person_id=? AND ta.active=1 AND p.status='active' AND COALESCE(pp.school_followup,0)=1 ORDER BY ta.created_at DESC LIMIT 1`).bind(teacherId, personId).first();
+  return env.DB.prepare(`
+    SELECT ta.*
+    FROM teacher_assignments ta
+    JOIN people p ON p.id=ta.person_id
+    LEFT JOIN person_programs pp ON pp.person_id=p.id
+    WHERE ta.teacher_id=?
+      AND ta.person_id=?
+      AND ta.active=1
+      AND p.status='active'
+      AND COALESCE(pp.school_followup,0)=1
+      AND ta.teacher_id=(
+        SELECT ta2.teacher_id
+        FROM teacher_assignments ta2
+        JOIN teachers t2 ON t2.id=ta2.teacher_id
+        WHERE ta2.person_id=ta.person_id AND ta2.active=1 AND t2.active=1
+        ORDER BY ta2.created_at DESC, ta2.teacher_id DESC
+        LIMIT 1
+      )
+    LIMIT 1
+  `).bind(teacherId, personId).first();
+}
+
+
+async function currentTeacherForStudent(env, personId) {
+  await ensureSchoolModuleTables(env);
+  return env.DB.prepare(`
+    SELECT ta.teacher_id, ta.school_year, ta.created_at, t.full_name, t.email
+    FROM teacher_assignments ta
+    JOIN teachers t ON t.id=ta.teacher_id
+    WHERE ta.person_id=? AND ta.active=1 AND t.active=1
+    ORDER BY ta.created_at DESC, ta.teacher_id DESC
+    LIMIT 1
+  `).bind(personId).first();
+}
+
+async function isCidebStudent(env, personId) {
+  await ensureCidebDirectoryTables(env);
+  const row = await env.DB.prepare(`
+    SELECT p.id
+    FROM people p
+    LEFT JOIN person_programs pp ON pp.person_id=p.id
+    LEFT JOIN person_data_context dc ON dc.person_id=p.id
+    LEFT JOIN school_enrollments se ON se.person_id=p.id AND se.is_current=1
+    WHERE p.id=? AND p.status='active' AND COALESCE(pp.school_followup,0)=1
+      AND (LOWER(COALESCE(se.institution_name,pp.school_name,dc.institution_name,'')) LIKE '%cideb%'
+           OR COALESCE(dc.context_type,'') IN ('cideb','mixed'))
+  `).bind(personId).first();
+  return !!row;
+}
+
+async function latestTeacherTransfer(env, personId, toTeacherId = '') {
+  await ensureSchoolModuleTables(env);
+  const sql = toTeacherId
+    ? `SELECT tr.*, old.full_name AS from_teacher_name, new.full_name AS to_teacher_name
+       FROM teacher_transfers tr
+       LEFT JOIN teachers old ON old.id=tr.from_teacher_id
+       LEFT JOIN teachers new ON new.id=tr.to_teacher_id
+       WHERE tr.person_id=? AND tr.to_teacher_id=? AND tr.undone_at IS NULL
+       ORDER BY tr.created_at DESC LIMIT 1`
+    : `SELECT tr.*, old.full_name AS from_teacher_name, new.full_name AS to_teacher_name
+       FROM teacher_transfers tr
+       LEFT JOIN teachers old ON old.id=tr.from_teacher_id
+       LEFT JOIN teachers new ON new.id=tr.to_teacher_id
+       WHERE tr.person_id=? AND tr.undone_at IS NULL
+       ORDER BY tr.created_at DESC LIMIT 1`;
+  return toTeacherId
+    ? env.DB.prepare(sql).bind(personId, toTeacherId).first()
+    : env.DB.prepare(sql).bind(personId).first();
+}
+
+async function performTeacherTransfer(env, { personId, toTeacherId, actorRole, actorId, transferNote = '' }) {
+  await ensureCidebDirectoryTables(env);
+  if (!(await isCidebStudent(env, personId))) throw new Error('Alumno CIDEB no encontrado o inactivo.');
+  const target = await env.DB.prepare(`SELECT id,full_name FROM teachers WHERE id=? AND active=1`).bind(toTeacherId).first();
+  if (!target) throw new Error('Selecciona un docente activo.');
+  const current = await currentTeacherForStudent(env, personId);
+  if (current?.teacher_id === toTeacherId) throw new Error('Ese docente ya es el maestro actual del alumno.');
+  const [enrollment, continuity] = await Promise.all([
+    currentEnrollment(env, personId),
+    env.DB.prepare(`SELECT general_description,strengths,support_needs,strategies,watch_items,approved_at FROM school_continuity WHERE person_id=? AND approved_at IS NOT NULL`).bind(personId).first()
+  ]);
+  const now = nowISO();
+  const transferId = makeId('transfer');
+  const period = safeText(enrollment?.school_year || '', 60);
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE teacher_assignments SET active=0 WHERE person_id=? AND active=1`).bind(personId),
+    env.DB.prepare(`INSERT INTO teacher_assignments (teacher_id,person_id,school_year,active,created_at) VALUES (?,?,?,1,?) ON CONFLICT(teacher_id,person_id,school_year) DO UPDATE SET active=1,created_at=excluded.created_at`).bind(toTeacherId,personId,period,now),
+    env.DB.prepare(`INSERT INTO teacher_transfers (id,person_id,from_teacher_id,to_teacher_id,transfer_date,school_period,general_description,strengths,support_needs,strategies,watch_items,transfer_note,created_by_role,created_by_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .bind(transferId,personId,current?.teacher_id||null,toTeacherId,nortiaLocalDate(),period,safeText(continuity?.general_description,5000),safeText(continuity?.strengths,5000),safeText(continuity?.support_needs,5000),safeText(continuity?.strategies,5000),safeText(continuity?.watch_items,5000),safeText(transferNote,1500),actorRole,safeText(actorId,120)||null,now)
+  ]);
+  await logAudit(env,actorRole,actorId,current?'transfer_teacher':'assign_current_teacher',personId,`${current?.full_name||'Sin docente'} → ${target.full_name}${period?` · ${period}`:''}`);
+  return { ok:true, transfer_id:transferId, from_teacher:current?.full_name||'', to_teacher:target.full_name, school_period:period, has_continuity:!!continuity };
 }
 
 async function getSchoolSnapshot(env, personId, reviewedOnly = true) {
   await ensureSchoolModuleTables(env);
-  const statusClause = reviewedOnly ? "AND status='reviewed'" : "";
   const fields = {
     attention: 'attention_support',
     instructions: 'instructions_support',
@@ -972,12 +1074,58 @@ async function getSchoolSnapshot(env, personId, reviewedOnly = true) {
     autonomy: 'autonomy_support',
     help_seeking: 'help_seeking_support'
   };
-  const stats = await env.DB.prepare(`
+
+  // The teacher-facing visual summary combines only information that has
+  // already passed human review: teacher records marked reviewed and
+  // professional observations that Alex explicitly published.
+  const teacherFilter = reviewedOnly ? "status='reviewed'" : "1=1";
+  const proFilter = reviewedOnly ? "visible_to_teachers=1" : "1=1";
+  const combined = `
+    WITH combined AS (
+      SELECT
+        observation_date,
+        context,
+        attention_support,
+        instructions_support,
+        organization_support,
+        peer_support,
+        frustration_support,
+        transitions_support,
+        autonomy_support,
+        help_seeking_support,
+        COALESCE(reviewed_at, updated_at, created_at) AS review_time,
+        'teacher' AS source
+      FROM teacher_observations
+      WHERE person_id=? AND ${teacherFilter}
+
+      UNION ALL
+
+      SELECT
+        observation_date,
+        context,
+        attention_support,
+        instructions_support,
+        organization_support,
+        peer_support,
+        frustration_support,
+        transitions_support,
+        autonomy_support,
+        help_seeking_support,
+        COALESCE(published_at, updated_at, created_at) AS review_time,
+        'professional' AS source
+      FROM professional_school_observations
+      WHERE person_id=? AND ${proFilter}
+    )
+  `;
+
+  const stats = await env.DB.prepare(`${combined}
     SELECT COUNT(*) AS observation_count,
-      MAX(COALESCE(reviewed_at, updated_at, created_at)) AS last_reviewed_at
-    FROM teacher_observations
-    WHERE person_id=? ${statusClause}
-  `).bind(personId).first();
+      MAX(review_time) AS last_reviewed_at,
+      SUM(CASE WHEN source='teacher' THEN 1 ELSE 0 END) AS teacher_count,
+      SUM(CASE WHEN source='professional' THEN 1 ELSE 0 END) AS professional_count
+    FROM combined
+  `).bind(personId, personId).first();
+
   const distributionSelect = Object.entries(fields).flatMap(([key, field]) => [
     `SUM(CASE WHEN ${field} IS NOT NULL THEN 1 ELSE 0 END) AS ${key}_n`,
     `SUM(CASE WHEN ${field}=0 THEN 1 ELSE 0 END) AS ${key}_0`,
@@ -985,7 +1133,11 @@ async function getSchoolSnapshot(env, personId, reviewedOnly = true) {
     `SUM(CASE WHEN ${field}=2 THEN 1 ELSE 0 END) AS ${key}_2`,
     `SUM(CASE WHEN ${field}=3 THEN 1 ELSE 0 END) AS ${key}_3`
   ]).join(', ');
-  const distRow = await env.DB.prepare(`SELECT ${distributionSelect} FROM teacher_observations WHERE person_id=? ${statusClause}`).bind(personId).first();
+
+  const distRow = await env.DB.prepare(`${combined}
+    SELECT ${distributionSelect} FROM combined
+  `).bind(personId, personId).first();
+
   const distribution = {};
   for (const key of Object.keys(fields)) {
     const n = Number(distRow?.[`${key}_n`] || 0);
@@ -993,27 +1145,34 @@ async function getSchoolSnapshot(env, personId, reviewedOnly = true) {
     const c1 = Number(distRow?.[`${key}_1`] || 0);
     const c2 = Number(distRow?.[`${key}_2`] || 0);
     const c3 = Number(distRow?.[`${key}_3`] || 0);
-    distribution[key] = { n, counts: [c0,c1,c2,c3], higher_support_pct: n ? Math.round(((c2+c3)/n)*100) : null };
+    distribution[key] = {
+      n,
+      counts: [c0, c1, c2, c3],
+      higher_support_pct: n ? Math.round(((c2 + c3) / n) * 100) : null
+    };
   }
-  const { results: contexts } = await env.DB.prepare(`
+
+  const { results: contexts } = await env.DB.prepare(`${combined}
     SELECT COALESCE(NULLIF(context,''),'Sin contexto') AS context, COUNT(*) AS count
-    FROM teacher_observations
-    WHERE person_id=? ${statusClause}
+    FROM combined
     GROUP BY COALESCE(NULLIF(context,''),'Sin contexto')
     ORDER BY count DESC, context ASC
     LIMIT 8
-  `).bind(personId).all();
-  const { results: trendDesc } = await env.DB.prepare(`
-    SELECT observation_date, context,
+  `).bind(personId, personId).all();
+
+  const { results: trendDesc } = await env.DB.prepare(`${combined}
+    SELECT observation_date, context, source,
       attention_support,instructions_support,organization_support,peer_support,
       frustration_support,transitions_support,autonomy_support,help_seeking_support
-    FROM teacher_observations
-    WHERE person_id=? ${statusClause}
-    ORDER BY observation_date DESC, created_at DESC
+    FROM combined
+    ORDER BY observation_date DESC, review_time DESC
     LIMIT 10
-  `).bind(personId).all();
+  `).bind(personId, personId).all();
+
   return {
     observation_count: Number(stats?.observation_count || 0),
+    teacher_count: Number(stats?.teacher_count || 0),
+    professional_count: Number(stats?.professional_count || 0),
     last_reviewed_at: stats?.last_reviewed_at || null,
     distribution,
     contexts: contexts || [],
@@ -1493,12 +1652,21 @@ Nunca tienes acceso a las notas privadas de Alex.
     const teacher = await env.DB.prepare(`SELECT agreement_accepted_at,agreement_version FROM teachers WHERE id=? AND active=1`).bind(session.actorId).first();
     if (!teacher?.agreement_accepted_at || teacher.agreement_version !== TEACHER_AGREEMENT_VERSION) return json({ error: "Primero acepta el acuerdo de confidencialidad." }, 403);
     const { results } = await env.DB.prepare(`
-      SELECT p.id,p.full_name,p.age,pp.grade_level,pp.school_name,ta.school_year
+      SELECT p.id,p.full_name,p.age,COALESCE(se.grade_level,pp.grade_level,'') AS grade_level,pp.school_name,COALESCE(se.school_year,pp.school_year,'') AS school_year
       FROM teacher_assignments ta JOIN people p ON p.id=ta.person_id
       LEFT JOIN person_programs pp ON pp.person_id=p.id
+      LEFT JOIN school_enrollments se ON se.person_id=p.id AND se.is_current=1
       WHERE ta.teacher_id=? AND ta.active=1
         AND p.status='active'
         AND COALESCE(pp.school_followup,0)=1
+        AND ta.teacher_id=(
+          SELECT ta2.teacher_id
+          FROM teacher_assignments ta2
+          JOIN teachers t2 ON t2.id=ta2.teacher_id
+          WHERE ta2.person_id=ta.person_id AND ta2.active=1 AND t2.active=1
+          ORDER BY ta2.created_at DESC, ta2.teacher_id DESC
+          LIMIT 1
+        )
       ORDER BY p.full_name
     `).bind(session.actorId).all();
     return json({ students: results || [] });
@@ -1515,10 +1683,15 @@ Nunca tienes acceso a las notas privadas de Alex.
     const person = await env.DB.prepare(`SELECT id,full_name,age FROM people WHERE id=?`).bind(personId).first();
     const program = await getPersonProgram(env, personId);
     const continuity = await env.DB.prepare(`SELECT general_description,strengths,support_needs,strategies,watch_items,approved_at,updated_at FROM school_continuity WHERE person_id=? AND approved_at IS NOT NULL`).bind(personId).first();
-    const snapshot = continuity ? await getSchoolSnapshot(env, personId, true) : { observation_count: 0, support: {}, contexts: [], trend: [], last_reviewed_at: null };
-    const { results: ownObservations } = await env.DB.prepare(`SELECT id,observation_date,subject,context,description,status,professional_comment FROM teacher_observations WHERE teacher_id=? AND person_id=? ORDER BY observation_date DESC,created_at DESC LIMIT 20`).bind(session.actorId, personId).all();
+    const snapshot = continuity ? await getSchoolSnapshot(env, personId, true) : { observation_count: 0, teacher_count: 0, professional_count: 0, distribution: {}, contexts: [], trend: [], last_reviewed_at: null };
+    const [{ results: ownObservations }, { results: professionalObservations }, enrollment, transfer] = await Promise.all([
+      env.DB.prepare(`SELECT id,observation_date,subject,context,description,status,professional_comment FROM teacher_observations WHERE teacher_id=? AND person_id=? ORDER BY observation_date DESC,created_at DESC LIMIT 20`).bind(session.actorId, personId).all(),
+      env.DB.prepare(`SELECT id,observation_date,subject,context,description,strategy_used,recommendation_text,published_at FROM professional_school_observations WHERE person_id=? AND visible_to_teachers=1 ORDER BY observation_date DESC,created_at DESC LIMIT 12`).bind(personId).all(),
+      currentEnrollment(env,personId),
+      latestTeacherTransfer(env,personId,session.actorId)
+    ]);
     await logAudit(env, "teacher", session.actorId, "view_student_continuity", personId, "Consulta de ficha de continuidad escolar");
-    return json({ person, program, continuity: continuity || {}, snapshot, own_observations: ownObservations || [] });
+    return json({ person, program, enrollment: enrollment || {}, continuity: continuity || {}, snapshot, latest_transfer: transfer || null, own_observations: ownObservations || [], professional_observations: professionalObservations || [] });
   }
 
   if (path === "/api/teacher/observation" && req.method === "POST") {
@@ -1543,6 +1716,108 @@ Nunca tienes acceso a las notas privadas de Alex.
     await logAudit(env,"teacher",session.actorId,"submit_observation",personId,"Registro docente enviado a revisión");
     await createNotification(env,{type:"teacher_observation",personId,title:"Nueva observación docente",message:`${teacher.full_name} registró una observación de ${person?.full_name || "un alumno"}.`,priority:"normal",emailSubject:"NORTIA · Nueva observación docente",emailText:`${teacher.full_name} registró una nueva observación escolar para ${person?.full_name || "un alumno"}.\n\nIngresa al Panel Profesional para revisarla.`});
     return json({ok:true,id});
+  }
+
+
+  if (path === "/api/coordinator/login" && req.method === "POST") {
+    await ensureSchoolModuleTables(env);
+    const limited = await enforceLoginRateLimit(req, env, "coordinator");
+    if (limited) return limited;
+    const b = await parseBody(req), code = safeText(b.code,60).toUpperCase();
+    if (!code) return json({error:"Escribe tu código de acceso."},400);
+    const hash = await sha256(code);
+    const coordinator = await env.DB.prepare(`SELECT * FROM coordinators WHERE access_hash=? AND active=1`).bind(hash).first();
+    if (!coordinator) { await recordLoginFailure(req,env,"coordinator"); return json({error:"Código de coordinación inválido o desactivado."},401); }
+    await clearLoginFailures(req,env,"coordinator");
+    const token = await createSignedRoleSession(env,"coordinator",coordinator.id);
+    await env.DB.prepare(`UPDATE coordinators SET last_login_at=?,updated_at=? WHERE id=?`).bind(nowISO(),nowISO(),coordinator.id).run();
+    await logAudit(env,"coordinator",coordinator.id,"login",null,"Inicio de sesión de coordinación CIDEB");
+    return json({ok:true,name:coordinator.full_name},200,{"set-cookie":roleCookie("coordinator",token)});
+  }
+
+  if (path === "/api/coordinator/logout" && req.method === "POST") return json({ok:true},200,{"set-cookie":clearRoleCookie("coordinator")});
+  if (path === "/api/coordinator/session" && req.method === "GET") return json({authenticated:!!(await getSignedRoleSession(req,env,"coordinator"))});
+
+  if (path === "/api/coordinator/me" && req.method === "GET") {
+    await ensureSchoolModuleTables(env); const session=await getSignedRoleSession(req,env,"coordinator"); if(!session)return json({error:"Acceso requerido"},401);
+    const coordinator=await env.DB.prepare(`SELECT id,full_name,email,school_name,agreement_version,agreement_accepted_at,agreement_signed_name FROM coordinators WHERE id=? AND active=1`).bind(session.actorId).first();
+    if(!coordinator)return json({error:"Acceso de coordinación no disponible."},403);
+    return json({coordinator,agreement_required:!coordinator.agreement_accepted_at||coordinator.agreement_version!==COORDINATOR_AGREEMENT_VERSION,current_version:COORDINATOR_AGREEMENT_VERSION});
+  }
+
+  if (path === "/api/coordinator/accept-agreement" && req.method === "POST") {
+    await ensureSchoolModuleTables(env); const session=await getSignedRoleSession(req,env,"coordinator"); if(!session)return json({error:"Acceso requerido"},401);
+    const b=await parseBody(req),signed=safeText(b.signed_name,160); if(!b.accepted||signed.length<3)return json({error:"Escribe tu nombre completo y acepta el acuerdo."},400);
+    await env.DB.prepare(`UPDATE coordinators SET agreement_version=?,agreement_accepted_at=?,agreement_signed_name=?,updated_at=? WHERE id=?`).bind(COORDINATOR_AGREEMENT_VERSION,nowISO(),signed,nowISO(),session.actorId).run();
+    await logAudit(env,"coordinator",session.actorId,"accept_coordination_confidentiality",null,`Versión ${COORDINATOR_AGREEMENT_VERSION}`);
+    return json({ok:true});
+  }
+
+  async function requireCoordinatorAgreement() {
+    const session=await getSignedRoleSession(req,env,"coordinator"); if(!session)return {error:json({error:"Acceso requerido"},401)};
+    const coordinator=await env.DB.prepare(`SELECT id,full_name,agreement_version,agreement_accepted_at FROM coordinators WHERE id=? AND active=1`).bind(session.actorId).first();
+    if(!coordinator)return {error:json({error:"Acceso de coordinación no disponible."},403)};
+    if(!coordinator.agreement_accepted_at||coordinator.agreement_version!==COORDINATOR_AGREEMENT_VERSION)return {error:json({error:"Primero acepta el acuerdo de confidencialidad."},403)};
+    return {session,coordinator};
+  }
+
+  if (path === "/api/coordinator/summary" && req.method === "GET") {
+    await ensureCidebDirectoryTables(env); const auth=await requireCoordinatorAgreement(); if(auth.error)return auth.error;
+    const base=`FROM people p LEFT JOIN person_programs pp ON pp.person_id=p.id LEFT JOIN person_data_context dc ON dc.person_id=p.id LEFT JOIN school_enrollments se ON se.person_id=p.id AND se.is_current=1 WHERE p.status='active' AND COALESCE(pp.school_followup,0)=1 AND (LOWER(COALESCE(se.institution_name,pp.school_name,dc.institution_name,'')) LIKE '%cideb%' OR COALESCE(dc.context_type,'') IN ('cideb','mixed'))`;
+    const [students,unassigned,reports,teachers]=await Promise.all([
+      env.DB.prepare(`SELECT COUNT(DISTINCT p.id) AS count ${base}`).first(),
+      env.DB.prepare(`SELECT COUNT(DISTINCT p.id) AS count ${base} AND NOT EXISTS (SELECT 1 FROM teacher_assignments ta WHERE ta.person_id=p.id AND ta.active=1)`).first(),
+      env.DB.prepare(`SELECT COUNT(DISTINCT p.id) AS count ${base} AND EXISTS (SELECT 1 FROM school_continuity sc WHERE sc.person_id=p.id AND sc.approved_at IS NOT NULL)`).first(),
+      env.DB.prepare(`SELECT COUNT(*) AS count FROM teachers WHERE active=1 AND LOWER(COALESCE(school_name,'')) LIKE '%cideb%'`).first()
+    ]);
+    return json({students:Number(students?.count||0),unassigned:Number(unassigned?.count||0),reports:Number(reports?.count||0),teachers:Number(teachers?.count||0)});
+  }
+
+  if (path === "/api/coordinator/students" && req.method === "GET") {
+    await ensureCidebDirectoryTables(env); const auth=await requireCoordinatorAgreement(); if(auth.error)return auth.error;
+    const q=cleanSchoolValue(url.searchParams.get('q'),120).toLowerCase(), like=`%${q}%`;
+    const page=Math.max(1,Number(url.searchParams.get('page')||1)),pageSize=50,offset=(page-1)*pageSize;
+    const base=`FROM people p LEFT JOIN person_programs pp ON pp.person_id=p.id LEFT JOIN person_data_context dc ON dc.person_id=p.id LEFT JOIN school_enrollments se ON se.person_id=p.id AND se.is_current=1 WHERE p.status='active' AND COALESCE(pp.school_followup,0)=1 AND (LOWER(COALESCE(se.institution_name,pp.school_name,dc.institution_name,'')) LIKE '%cideb%' OR COALESCE(dc.context_type,'') IN ('cideb','mixed')) AND (?='' OR LOWER(p.full_name) LIKE ? OR LOWER(COALESCE(se.student_number,'')) LIKE ? OR LOWER(COALESCE(se.grade_level,pp.grade_level,'')) LIKE ? OR LOWER(COALESCE(se.group_name,'')) LIKE ?)`;
+    const bind=[q,like,like,like,like];
+    const count=await env.DB.prepare(`SELECT COUNT(DISTINCT p.id) AS count ${base}`).bind(...bind).first();
+    const {results}=await env.DB.prepare(`
+      SELECT p.id,p.full_name,p.age,COALESCE(se.student_number,'') AS student_number,COALESCE(se.grade_level,pp.grade_level,'') AS grade_level,COALESCE(se.group_name,'') AS group_name,COALESCE(se.school_year,pp.school_year,'') AS school_period,
+        (SELECT t.full_name FROM teacher_assignments ta JOIN teachers t ON t.id=ta.teacher_id WHERE ta.person_id=p.id AND ta.active=1 AND t.active=1 ORDER BY ta.created_at DESC LIMIT 1) AS teacher_name,
+        (SELECT ta.teacher_id FROM teacher_assignments ta JOIN teachers t ON t.id=ta.teacher_id WHERE ta.person_id=p.id AND ta.active=1 AND t.active=1 ORDER BY ta.created_at DESC LIMIT 1) AS teacher_id,
+        CASE WHEN EXISTS(SELECT 1 FROM school_continuity sc WHERE sc.person_id=p.id AND sc.approved_at IS NOT NULL) THEN 1 ELSE 0 END AS has_report
+      ${base}
+      ORDER BY p.full_name LIMIT ? OFFSET ?
+    `).bind(...bind,pageSize,offset).all();
+    const total=Number(count?.count||0); return json({students:results||[],pagination:{page,page_size:pageSize,total,pages:Math.max(1,Math.ceil(total/pageSize))}});
+  }
+
+  if (path === "/api/coordinator/teachers" && req.method === "GET") {
+    await ensureSchoolModuleTables(env); const auth=await requireCoordinatorAgreement(); if(auth.error)return auth.error;
+    const {results}=await env.DB.prepare(`SELECT id,full_name,email FROM teachers WHERE active=1 AND LOWER(COALESCE(school_name,'')) LIKE '%cideb%' ORDER BY full_name`).all();
+    return json({teachers:results||[]});
+  }
+
+  if (path.startsWith("/api/coordinator/student/") && req.method === "GET") {
+    await ensureCidebDirectoryTables(env); const auth=await requireCoordinatorAgreement(); if(auth.error)return auth.error;
+    const personId=path.split('/').pop(); if(!(await isCidebStudent(env,personId)))return json({error:"Alumno no encontrado."},404);
+    const [person,enrollment,continuity,currentTeacher,transfer,professional]=await Promise.all([
+      env.DB.prepare(`SELECT id,full_name,age FROM people WHERE id=?`).bind(personId).first(),
+      currentEnrollment(env,personId),
+      env.DB.prepare(`SELECT general_description,strengths,support_needs,strategies,watch_items,approved_at,updated_at FROM school_continuity WHERE person_id=? AND approved_at IS NOT NULL`).bind(personId).first(),
+      currentTeacherForStudent(env,personId),
+      latestTeacherTransfer(env,personId),
+      env.DB.prepare(`SELECT observation_date,context,description,strategy_used,recommendation_text FROM professional_school_observations WHERE person_id=? AND visible_to_teachers=1 ORDER BY observation_date DESC,created_at DESC LIMIT 8`).bind(personId).all()
+    ]);
+    await logAudit(env,"coordinator",auth.session.actorId,"view_student_school_summary",personId,"Consulta de continuidad escolar por coordinación");
+    return json({person,enrollment:enrollment||{},continuity:continuity||{},current_teacher:currentTeacher||null,latest_transfer:transfer||null,professional_observations:professional.results||[]});
+  }
+
+  if (path === "/api/coordinator/transfer" && req.method === "POST") {
+    await ensureCidebDirectoryTables(env); const auth=await requireCoordinatorAgreement(); if(auth.error)return auth.error;
+    const b=await parseBody(req),personId=safeText(b.person_id,120),toTeacherId=safeText(b.to_teacher_id,120);
+    if(!personId||!toTeacherId)return json({error:"Alumno y nuevo docente son obligatorios."},400);
+    try { return json(await performTeacherTransfer(env,{personId,toTeacherId,actorRole:'coordinator',actorId:auth.session.actorId,transferNote:safeText(b.transfer_note,1500)})); }
+    catch(e){return json({error:safeText(e.message||e,500)},400);}
   }
 
   if (path === "/api/family/login" && req.method === "POST") {
@@ -1815,15 +2090,15 @@ Nunca tienes acceso a las notas privadas de Alex.
         if(Number(person.therapy_with_alex)){await env.DB.prepare(`INSERT INTO person_data_context (person_id,context_type,institution_name,updated_at) VALUES (?,'private','',?) ON CONFLICT(person_id) DO UPDATE SET context_type='private',institution_name='',updated_at=excluded.updated_at`).bind(person.id,now).run();}
         else {await env.DB.prepare(`UPDATE people SET status='archived',updated_at=? WHERE id=?`).bind(now,person.id).run(); await env.DB.prepare(`UPDATE client_access SET active=0,updated_at=? WHERE person_id=?`).bind(now,person.id).run(); await env.DB.prepare(`UPDATE guardians SET active=0,updated_at=? WHERE person_id=?`).bind(now,person.id).run(); const cur=await getPersonDataContext(env,person.id); await env.DB.prepare(`INSERT INTO person_data_context (person_id,context_type,institution_name,archive_reason,archived_at,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(person_id) DO UPDATE SET archive_reason=excluded.archive_reason,archived_at=excluded.archived_at,updated_at=excluded.updated_at`).bind(person.id,cur.context_type||'cideb',cur.institution_name||institution,`Cierre de uso institucional: ${institution}`,now,now).run();}
       }
-      await env.DB.prepare(`UPDATE teachers SET active=0,updated_at=? WHERE LOWER(COALESCE(school_name,'')) LIKE ?`).bind(now,`%${institution.toLowerCase()}%`).run(); await logAudit(env,"admin","alex","close_institution_access",null,`Se cerraron accesos institucionales de ${institution}. Los procesos terapéuticos privados se conservaron.`); return json({ok:true,mode,message:`Accesos de ${institution} cerrados. Los expedientes exclusivamente escolares quedaron archivados; los procesos terapéuticos privados se conservaron.`,preview:await institutionPreview(env,institution)});
+      await env.DB.prepare(`UPDATE teachers SET active=0,updated_at=? WHERE LOWER(COALESCE(school_name,'')) LIKE ?`).bind(now,`%${institution.toLowerCase()}%`).run(); await env.DB.prepare(`UPDATE coordinators SET active=0,updated_at=? WHERE LOWER(COALESCE(school_name,'')) LIKE ?`).bind(now,`%${institution.toLowerCase()}%`).run(); await logAudit(env,"admin","alex","close_institution_access",null,`Se cerraron accesos institucionales de ${institution}. Los procesos terapéuticos privados se conservaron.`); return json({ok:true,mode,message:`Accesos de ${institution} cerrados. Los expedientes exclusivamente escolares quedaron archivados; los procesos terapéuticos privados se conservaron.`,preview:await institutionPreview(env,institution)});
     }
     if(mode==="delete"){
       if(normalizeConfirmation(b.confirmation)!==normalizeConfirmation(`CERRAR ${institution} Y ELIMINAR`))return json({error:`Para confirmar escribe exactamente: CERRAR ${institution} Y ELIMINAR`},400);
-      for(const person of people){ await env.DB.batch([env.DB.prepare(`DELETE FROM teacher_observations WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM teacher_assignments WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM school_continuity WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM school_continuity_drafts WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM school_continuity_versions WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM school_enrollments WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM family_observations WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM family_profiles WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM guardians WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM notifications WHERE person_id=? AND type IN ('teacher_observation','family_observation')`).bind(person.id)]);
+      for(const person of people){ await env.DB.batch([env.DB.prepare(`DELETE FROM teacher_observations WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM teacher_assignments WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM school_continuity WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM school_continuity_drafts WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM school_continuity_versions WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM teacher_transfers WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM school_enrollments WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM family_observations WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM family_profiles WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM guardians WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM notifications WHERE person_id=? AND type IN ('teacher_observation','family_observation')`).bind(person.id)]);
         if(Number(person.therapy_with_alex)){await env.DB.prepare(`UPDATE person_programs SET school_followup=0,school_name='',grade_level='',school_year='',updated_at=? WHERE person_id=?`).bind(now,person.id).run(); await env.DB.prepare(`INSERT INTO person_data_context (person_id,context_type,institution_name,updated_at) VALUES (?,'private','',?) ON CONFLICT(person_id) DO UPDATE SET context_type='private',institution_name='',archive_reason=NULL,archived_at=NULL,updated_at=excluded.updated_at`).bind(person.id,now).run();}
         else {await env.DB.batch([env.DB.prepare(`DELETE FROM notifications WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM audit_log WHERE person_id=?`).bind(person.id),env.DB.prepare(`DELETE FROM appointments WHERE person_id=?`).bind(person.id)]); await env.DB.prepare(`DELETE FROM people WHERE id=?`).bind(person.id).run();}
       }
-      await env.DB.prepare(`DELETE FROM teachers WHERE LOWER(COALESCE(school_name,'')) LIKE ?`).bind(`%${institution.toLowerCase()}%`).run(); await logAudit(env,"admin","alex","delete_institution_data",null,`Se eliminaron datos escolares asociados a ${institution}; se preservaron procesos terapéuticos privados.`); return json({ok:true,mode,message:`Datos escolares de ${institution} eliminados. Los procesos terapéuticos privados se conservaron y dejaron de estar vinculados a la institución.`,preview:await institutionPreview(env,institution)});
+      await env.DB.prepare(`DELETE FROM teachers WHERE LOWER(COALESCE(school_name,'')) LIKE ?`).bind(`%${institution.toLowerCase()}%`).run(); await env.DB.prepare(`DELETE FROM coordinators WHERE LOWER(COALESCE(school_name,'')) LIKE ?`).bind(`%${institution.toLowerCase()}%`).run(); await logAudit(env,"admin","alex","delete_institution_data",null,`Se eliminaron datos escolares asociados a ${institution}; se preservaron procesos terapéuticos privados.`); return json({ok:true,mode,message:`Datos escolares de ${institution} eliminados. Los procesos terapéuticos privados se conservaron y dejaron de estar vinculados a la institución.`,preview:await institutionPreview(env,institution)});
     }
     return json({error:"Modo inválido. Usa archive o delete."},400);
   }
@@ -1851,19 +2126,17 @@ Nunca tienes acceso a las notas privadas de Alex.
   }
 
   if (path === "/api/admin/teachers/create" && req.method === "POST") {
-    await ensureSchoolModuleTables(env); const b=await parseBody(req); const name=safeText(b.full_name,160),personId=safeText(b.person_id,120); if(!name||!personId) return json({error:"Nombre del docente y alumno son obligatorios."},400);
-    const person=await env.DB.prepare(`SELECT full_name FROM people WHERE id=?`).bind(personId).first(); if(!person) return json({error:"Alumno no encontrado."},404);
-    const code=generateRoleAccessCode("D"),hash=await sha256(code),id=makeId("teacher"),now=nowISO(),schoolYear=safeText(b.school_year,60);
-    await env.DB.prepare(`INSERT INTO teachers (id,full_name,email,school_name,access_hash,access_hint,active,agreement_version,created_at,updated_at) VALUES (?,?,?,?,?,?,1,?,?,?)`).bind(id,name,safeText(b.email,180),safeText(b.school_name,180),hash,code.slice(-4),TEACHER_AGREEMENT_VERSION,now,now).run();
-    await env.DB.prepare(`INSERT INTO teacher_assignments (teacher_id,person_id,school_year,active,created_at) VALUES (?,?,?,1,?)`).bind(id,personId,schoolYear,now).run();
-    await logAudit(env,"admin","alex","create_teacher_access",personId,`Docente: ${name}`);
-    return json({ok:true,teacher_id:id,access_code:code,student_name:person.full_name});
+    await ensureSchoolModuleTables(env); const b=await parseBody(req); const name=safeText(b.full_name,160); if(!name) return json({error:"Nombre del docente obligatorio."},400);
+    const code=generateRoleAccessCode("D"),hash=await sha256(code),id=makeId("teacher"),now=nowISO();
+    await env.DB.prepare(`INSERT INTO teachers (id,full_name,email,school_name,access_hash,access_hint,active,agreement_version,created_at,updated_at) VALUES (?,?,?,?,?,?,1,?,?,?)`).bind(id,name,safeText(b.email,180),safeText(b.school_name,180)||'CIDEB',hash,code.slice(-4),TEACHER_AGREEMENT_VERSION,now,now).run();
+    await logAudit(env,"admin","alex","create_teacher_access",null,`Docente: ${name}`);
+    return json({ok:true,teacher_id:id,access_code:code});
   }
 
   if (path === "/api/admin/teachers/assign" && req.method === "POST") {
-    await ensureSchoolModuleTables(env); const b=await parseBody(req),teacherId=safeText(b.teacher_id,120),personId=safeText(b.person_id,120),schoolYear=safeText(b.school_year,60); if(!teacherId||!personId) return json({error:"Docente y alumno son obligatorios."},400);
-    await env.DB.prepare(`INSERT INTO teacher_assignments (teacher_id,person_id,school_year,active,created_at) VALUES (?,?,?,1,?) ON CONFLICT(teacher_id,person_id,school_year) DO UPDATE SET active=1`).bind(teacherId,personId,schoolYear,nowISO()).run();
-    await logAudit(env,"admin","alex","assign_teacher",personId,`Teacher ${teacherId}`); return json({ok:true});
+    await ensureCidebDirectoryTables(env); const b=await parseBody(req),teacherId=safeText(b.teacher_id,120),personId=safeText(b.person_id,120); if(!teacherId||!personId) return json({error:"Docente y alumno son obligatorios."},400);
+    const current=await currentTeacherForStudent(env,personId); if(current) return json({error:`${current.full_name} ya es el maestro actual. Usa “Transferir docente” desde la ficha del alumno.`},409);
+    try{return json(await performTeacherTransfer(env,{personId,toTeacherId:teacherId,actorRole:'admin',actorId:'alex',transferNote:'Asignación inicial'}));}catch(e){return json({error:safeText(e.message||e,500)},400);}
   }
 
   if (path === "/api/admin/teachers/detail" && req.method === "GET") {
@@ -1871,7 +2144,7 @@ Nunca tienes acceso a las notas privadas de Alex.
     const teacherId=safeText(url.searchParams.get('teacher_id'),120);
     const teacher=await env.DB.prepare(`SELECT id,full_name,email,school_name,active,access_hint,agreement_version,agreement_accepted_at,last_login_at FROM teachers WHERE id=?`).bind(teacherId).first();
     if(!teacher)return json({error:'Docente no encontrado.'},404);
-    const {results}=await env.DB.prepare(`SELECT ta.person_id,ta.school_year,ta.active,p.full_name FROM teacher_assignments ta JOIN people p ON p.id=ta.person_id WHERE ta.teacher_id=? ORDER BY ta.active DESC,ta.school_year DESC,p.full_name`).bind(teacherId).all();
+    const {results}=await env.DB.prepare(`SELECT ta.person_id,ta.school_year,ta.active,p.full_name FROM teacher_assignments ta JOIN people p ON p.id=ta.person_id WHERE ta.teacher_id=? AND ta.active=1 ORDER BY p.full_name`).bind(teacherId).all();
     return json({teacher,assignments:results||[]});
   }
 
@@ -1897,6 +2170,146 @@ Nunca tienes acceso a las notas privadas de Alex.
     await env.DB.prepare(`UPDATE teacher_assignments SET active=0 WHERE teacher_id=? AND person_id=? AND school_year=?`).bind(teacherId,personId,year).run();
     await logAudit(env,'admin','alex','unassign_teacher',personId,`Docente ${teacherId} · ${year}`);
     return json({ok:true});
+  }
+
+
+
+  if (path === "/api/admin/coordinators" && req.method === "GET") {
+    await ensureSchoolModuleTables(env); const {results}=await env.DB.prepare(`SELECT id,full_name,email,school_name,active,access_hint,agreement_accepted_at,last_login_at FROM coordinators ORDER BY full_name`).all();
+    return json({coordinators:results||[]});
+  }
+  if (path === "/api/admin/coordinators/create" && req.method === "POST") {
+    await ensureSchoolModuleTables(env); const b=await parseBody(req),name=safeText(b.full_name,160); if(!name)return json({error:"Nombre obligatorio."},400);
+    const code=generateRoleAccessCode('C'),hash=await sha256(code),id=makeId('coord'),now=nowISO();
+    await env.DB.prepare(`INSERT INTO coordinators (id,full_name,email,school_name,access_hash,access_hint,active,agreement_version,created_at,updated_at) VALUES (?,?,?,?,?,?,1,?,?,?)`).bind(id,name,safeText(b.email,180),safeText(b.school_name,180)||'CIDEB',hash,code.slice(-4),COORDINATOR_AGREEMENT_VERSION,now,now).run();
+    await logAudit(env,'admin','alex','create_coordinator_access',null,`Coordinación: ${name}`); return json({ok:true,coordinator_id:id,access_code:code});
+  }
+  if (path === "/api/admin/coordinators/access" && req.method === "POST") {
+    const b=await parseBody(req),id=safeText(b.coordinator_id,120); await env.DB.prepare(`UPDATE coordinators SET active=?,updated_at=? WHERE id=?`).bind(b.active?1:0,nowISO(),id).run();
+    await logAudit(env,'admin','alex',b.active?'activate_coordinator':'deactivate_coordinator',null,`Coordinación ${id}`); return json({ok:true});
+  }
+  if (path === "/api/admin/coordinators/regenerate" && req.method === "POST") {
+    const b=await parseBody(req),id=safeText(b.coordinator_id,120),row=await env.DB.prepare(`SELECT id FROM coordinators WHERE id=?`).bind(id).first(); if(!row)return json({error:'Acceso no encontrado.'},404);
+    const code=generateRoleAccessCode('C'),hash=await sha256(code),now=nowISO();
+    await env.DB.prepare(`UPDATE coordinators SET access_hash=?,access_hint=?,active=1,agreement_accepted_at=NULL,agreement_signed_name=NULL,agreement_version=?,updated_at=? WHERE id=?`).bind(hash,code.slice(-4),COORDINATOR_AGREEMENT_VERSION,now,id).run();
+    await logAudit(env,'admin','alex','regenerate_coordinator_access',null,`Coordinación ${id}`); return json({ok:true,access_code:code});
+  }
+  if (path === "/api/admin/teacher-transfer/preview" && req.method === "GET") {
+    await ensureCidebDirectoryTables(env); const personId=safeText(url.searchParams.get('person_id'),120); if(!personId)return json({error:'Alumno obligatorio.'},400);
+    if(!(await isCidebStudent(env,personId)))return json({error:'Alumno CIDEB no encontrado.'},404);
+    const [current,enrollment,continuity,{results:teachers},latest]=await Promise.all([
+      currentTeacherForStudent(env,personId),currentEnrollment(env,personId),env.DB.prepare(`SELECT general_description,strengths,support_needs,strategies,watch_items,approved_at FROM school_continuity WHERE person_id=? AND approved_at IS NOT NULL`).bind(personId).first(),env.DB.prepare(`SELECT id,full_name FROM teachers WHERE active=1 AND LOWER(COALESCE(school_name,'')) LIKE '%cideb%' ORDER BY full_name`).all(),latestTeacherTransfer(env,personId)
+    ]);
+    return json({current_teacher:current||null,enrollment:enrollment||{},continuity:continuity||{},teachers:(teachers||[]).filter(t=>t.id!==current?.teacher_id),latest_transfer:latest||null});
+  }
+  if (path === "/api/admin/teacher-transfer" && req.method === "POST") {
+    const b=await parseBody(req),personId=safeText(b.person_id,120),toTeacherId=safeText(b.to_teacher_id,120); if(!personId||!toTeacherId)return json({error:'Alumno y nuevo docente son obligatorios.'},400);
+    try{return json(await performTeacherTransfer(env,{personId,toTeacherId,actorRole:'admin',actorId:'alex',transferNote:safeText(b.transfer_note,1500)}));}catch(e){return json({error:safeText(e.message||e,500)},400);}
+  }
+  if (path === "/api/admin/teacher-transfer/undo" && req.method === "POST") {
+    await ensureSchoolModuleTables(env); const b=await parseBody(req),transferId=safeText(b.transfer_id,120); if(!transferId)return json({error:'Transferencia obligatoria.'},400);
+    const tr=await env.DB.prepare(`SELECT * FROM teacher_transfers WHERE id=? AND undone_at IS NULL`).bind(transferId).first(); if(!tr)return json({error:'Transferencia no encontrada o ya deshecha.'},404);
+    if(Date.now()-Date.parse(tr.created_at)>24*60*60*1000)return json({error:'La ventana de 24 horas para deshacer esta transferencia ya terminó.'},409);
+    const activity=await env.DB.prepare(`SELECT COUNT(*) AS count FROM teacher_observations WHERE person_id=? AND teacher_id=? AND datetime(created_at)>datetime(?)`).bind(tr.person_id,tr.to_teacher_id,tr.created_at).first();
+    if(Number(activity?.count||0)>0)return json({error:'No se puede deshacer porque el nuevo docente ya registró información.'},409);
+    const now=nowISO(),enrollment=await currentEnrollment(env,tr.person_id),period=safeText(enrollment?.school_year||tr.school_period||'',60);
+    const ops=[env.DB.prepare(`UPDATE teacher_assignments SET active=0 WHERE person_id=? AND active=1`).bind(tr.person_id),env.DB.prepare(`UPDATE teacher_transfers SET undone_at=?,undone_by_role='admin',undone_by_id='alex' WHERE id=?`).bind(now,transferId)];
+    if(tr.from_teacher_id){const old=await env.DB.prepare(`SELECT id FROM teachers WHERE id=? AND active=1`).bind(tr.from_teacher_id).first();if(old)ops.push(env.DB.prepare(`INSERT INTO teacher_assignments (teacher_id,person_id,school_year,active,created_at) VALUES (?,?,?,1,?) ON CONFLICT(teacher_id,person_id,school_year) DO UPDATE SET active=1,created_at=excluded.created_at`).bind(tr.from_teacher_id,tr.person_id,period,now));}
+    await env.DB.batch(ops); await logAudit(env,'admin','alex','undo_teacher_transfer',tr.person_id,`Transferencia ${transferId}`); return json({ok:true});
+  }
+
+  if (path === "/api/admin/professional-school-observations" && req.method === "GET") {
+    await ensureSchoolModuleTables(env);
+    const personId = safeText(url.searchParams.get("person_id"), 120);
+    if (!personId) return json({ error: "Alumno obligatorio." }, 400);
+    const { results } = await env.DB.prepare(`
+      SELECT *
+      FROM professional_school_observations
+      WHERE person_id=?
+      ORDER BY observation_date DESC, created_at DESC
+      LIMIT 100
+    `).bind(personId).all();
+    return json({ observations: results || [] });
+  }
+
+  if (path === "/api/admin/professional-school-observations" && req.method === "POST") {
+    await ensureSchoolModuleTables(env);
+    const b = await parseBody(req);
+    const personId = safeText(b.person_id, 120);
+    const observationDate = safeText(b.observation_date, 20);
+    const description = safeText(b.description, 5000);
+    if (!personId || !observationDate || !description) {
+      return json({ error: "Alumno, fecha y observación son obligatorios." }, 400);
+    }
+    if (!isValidDateOnly(observationDate) || observationDate > nortiaLocalDate()) {
+      return json({ error: "La fecha de observación no es válida." }, 400);
+    }
+    const person = await env.DB.prepare(`SELECT id FROM people WHERE id=? AND status='active'`).bind(personId).first();
+    if (!person) return json({ error: "Alumno no encontrado o inactivo." }, 404);
+
+    const rating = value => {
+      if (value === "" || value == null) return null;
+      const n = Number(value);
+      return Number.isInteger(n) && n >= 0 && n <= 3 ? n : null;
+    };
+    const published = b.visible_to_teachers === true || b.visible_to_teachers === 1 || b.visible_to_teachers === "1";
+    const now = nowISO();
+    const id = makeId("probs");
+
+    await env.DB.prepare(`
+      INSERT INTO professional_school_observations (
+        id,person_id,observation_date,subject,context,
+        attention_support,instructions_support,organization_support,peer_support,
+        frustration_support,transitions_support,autonomy_support,help_seeking_support,
+        description,strategy_used,recommendation_text,visible_to_teachers,published_at,
+        created_at,updated_at
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).bind(
+      id, personId, observationDate,
+      safeText(b.subject, 300), safeText(b.context, 200),
+      rating(b.attention_support), rating(b.instructions_support), rating(b.organization_support), rating(b.peer_support),
+      rating(b.frustration_support), rating(b.transitions_support), rating(b.autonomy_support), rating(b.help_seeking_support),
+      description, safeText(b.strategy_used, 5000), safeText(b.recommendation_text, 5000),
+      published ? 1 : 0, published ? now : null, now, now
+    ).run();
+
+    await logAudit(
+      env,
+      "admin",
+      "alex",
+      published ? "publish_professional_school_observation" : "save_professional_school_observation",
+      personId,
+      published ? "Observación profesional publicada para docentes asignados." : "Observación profesional guardada como privada."
+    );
+    return json({ ok: true, id, published });
+  }
+
+  if (path === "/api/admin/professional-school-observations/visibility" && req.method === "POST") {
+    await ensureSchoolModuleTables(env);
+    const b = await parseBody(req);
+    const id = safeText(b.id, 120);
+    const row = await env.DB.prepare(`SELECT person_id FROM professional_school_observations WHERE id=?`).bind(id).first();
+    if (!row) return json({ error: "Observación no encontrada." }, 404);
+    const visible = b.visible === true || b.visible === 1 || b.visible === "1";
+    const now = nowISO();
+    await env.DB.prepare(`
+      UPDATE professional_school_observations
+      SET visible_to_teachers=?, published_at=?, updated_at=?
+      WHERE id=?
+    `).bind(visible ? 1 : 0, visible ? now : null, now, id).run();
+    await logAudit(env,"admin","alex",visible?"publish_professional_school_observation":"hide_professional_school_observation",row.person_id,visible?"Observación profesional visible para docentes.":"Observación profesional retirada de la vista docente.");
+    return json({ ok: true, visible });
+  }
+
+  if (path === "/api/admin/professional-school-observations/delete" && req.method === "POST") {
+    await ensureSchoolModuleTables(env);
+    const b = await parseBody(req);
+    const id = safeText(b.id, 120);
+    const row = await env.DB.prepare(`SELECT person_id FROM professional_school_observations WHERE id=?`).bind(id).first();
+    if (!row) return json({ error: "Observación no encontrada." }, 404);
+    await env.DB.prepare(`DELETE FROM professional_school_observations WHERE id=?`).bind(id).run();
+    await logAudit(env,"admin","alex","delete_professional_school_observation",row.person_id,"Observación profesional eliminada.");
+    return json({ ok: true });
   }
 
   if (path === "/api/admin/teacher-observations" && req.method === "GET") {
@@ -2005,7 +2418,7 @@ Nunca tienes acceso a las notas privadas de Alex.
   }
 
   if (path === "/api/admin/audit" && req.method === "GET") {
-    await ensureSchoolModuleTables(env); const personId=safeText(url.searchParams.get("person_id"),120); const filter=personId?"WHERE a.person_id=?":""; const sql=`SELECT a.*,p.full_name AS person_name,CASE WHEN a.actor_role='teacher' THEN (SELECT full_name FROM teachers WHERE id=a.actor_id) WHEN a.actor_role='family' THEN (SELECT full_name FROM guardians WHERE id=a.actor_id) ELSE 'Alex' END AS actor_name FROM audit_log a LEFT JOIN people p ON p.id=a.person_id ${filter} ORDER BY a.created_at DESC LIMIT 150`; const q=env.DB.prepare(sql); const {results}=personId?await q.bind(personId).all():await q.all(); return json({audit:results||[]});
+    await ensureSchoolModuleTables(env); const personId=safeText(url.searchParams.get("person_id"),120); const filter=personId?"WHERE a.person_id=?":""; const sql=`SELECT a.*,p.full_name AS person_name,CASE WHEN a.actor_role='teacher' THEN (SELECT full_name FROM teachers WHERE id=a.actor_id) WHEN a.actor_role='family' THEN (SELECT full_name FROM guardians WHERE id=a.actor_id) WHEN a.actor_role='coordinator' THEN (SELECT full_name FROM coordinators WHERE id=a.actor_id) ELSE 'Alex' END AS actor_name FROM audit_log a LEFT JOIN people p ON p.id=a.person_id ${filter} ORDER BY a.created_at DESC LIMIT 150`; const q=env.DB.prepare(sql); const {results}=personId?await q.bind(personId).all():await q.all(); return json({audit:results||[]});
   }
 
   if (path === "/api/admin/dashboard" && req.method === "GET") {
@@ -2162,7 +2575,8 @@ Nunca tienes acceso a las notas privadas de Alex.
         COALESCE(se.institution_name,pp.school_name,'CIDEB') AS institution_name,
         COALESCE(sc.approved_at,'') AS report_published_at,
         (SELECT COUNT(*) FROM teacher_observations too WHERE too.person_id=p.id AND too.status='submitted') AS pending_observations,
-        (SELECT GROUP_CONCAT(t.full_name, ', ') FROM teacher_assignments ta JOIN teachers t ON t.id=ta.teacher_id WHERE ta.person_id=p.id AND ta.active=1 AND t.active=1) AS teacher_names,
+        (SELECT t.full_name FROM teacher_assignments ta JOIN teachers t ON t.id=ta.teacher_id WHERE ta.person_id=p.id AND ta.active=1 AND t.active=1 ORDER BY ta.created_at DESC LIMIT 1) AS teacher_names,
+        (SELECT ta.teacher_id FROM teacher_assignments ta JOIN teachers t ON t.id=ta.teacher_id WHERE ta.person_id=p.id AND ta.active=1 AND t.active=1 ORDER BY ta.created_at DESC LIMIT 1) AS current_teacher_id,
         (SELECT COUNT(*) FROM guardians g WHERE g.person_id=p.id AND g.active=1) AS family_access_count
       FROM people p
       LEFT JOIN person_programs pp ON pp.person_id=p.id
@@ -2235,14 +2649,15 @@ Nunca tienes acceso a las notas privadas de Alex.
     if (!personId) return json({ error: "Alumno obligatorio." }, 400);
     const person = await env.DB.prepare(`SELECT id,full_name,age,email,phone,status,updated_at FROM people WHERE id=?`).bind(personId).first();
     if (!person) return json({ error: "Alumno no encontrado." }, 404);
-    const [enrollment, program, continuity, teacherRows, counts] = await Promise.all([
+    const [enrollment, program, continuity, currentTeacher, counts, latestTransfer] = await Promise.all([
       currentEnrollment(env, personId),
       getPersonProgram(env, personId),
       env.DB.prepare(`SELECT * FROM school_continuity WHERE person_id=?`).bind(personId).first(),
-      env.DB.prepare(`SELECT t.id,t.full_name,ta.school_year FROM teacher_assignments ta JOIN teachers t ON t.id=ta.teacher_id WHERE ta.person_id=? AND ta.active=1 AND t.active=1 ORDER BY t.full_name`).bind(personId).all(),
-      env.DB.prepare(`SELECT (SELECT COUNT(*) FROM teacher_observations WHERE person_id=?) AS observations,(SELECT COUNT(*) FROM teacher_observations WHERE person_id=? AND status='submitted') AS pending,(SELECT COUNT(*) FROM guardians WHERE person_id=? AND active=1) AS family_accesses`).bind(personId,personId,personId).first()
+      currentTeacherForStudent(env,personId),
+      env.DB.prepare(`SELECT (SELECT COUNT(*) FROM teacher_observations WHERE person_id=?) AS observations,(SELECT COUNT(*) FROM teacher_observations WHERE person_id=? AND status='submitted') AS pending,(SELECT COUNT(*) FROM guardians WHERE person_id=? AND active=1) AS family_accesses`).bind(personId,personId,personId).first(),
+      latestTeacherTransfer(env,personId)
     ]);
-    return json({ person, enrollment: enrollment || {}, program, continuity: continuity || {}, teachers: teacherRows.results || [], counts: counts || {} });
+    return json({ person, enrollment: enrollment || {}, program, continuity: continuity || {}, current_teacher: currentTeacher || null, teachers: currentTeacher ? [{id:currentTeacher.teacher_id,full_name:currentTeacher.full_name,school_year:currentTeacher.school_year}] : [], latest_transfer:latestTransfer||null, counts: counts || {} });
   }
 
   if (path === "/api/admin/cideb/student/create" && req.method === "POST") {
@@ -2369,24 +2784,19 @@ Nunca tienes acceso a las notas privadas de Alex.
   if (path === "/api/admin/cideb/cycle/advance" && req.method === "POST") {
     await ensureCidebDirectoryTables(env);
     const b=await parseBody(req),fromYear=cleanSchoolValue(b.from_year,40),toYear=cleanSchoolValue(b.to_year,40);
-    if(!fromYear||!toYear||fromYear===toYear)return json({error:"Indica un ciclo actual y uno nuevo diferentes."},400);
+    if(!fromYear||!toYear||fromYear===toYear)return json({error:"Indica un periodo actual y uno nuevo diferentes."},400);
     const {results}=await env.DB.prepare(`SELECT * FROM school_enrollments WHERE is_current=1 AND status='active' AND school_year=? AND LOWER(institution_name) LIKE '%cideb%'`).bind(fromYear).all();
     const now=nowISO(); let advanced=0;
-    for(let start=0;start<(results||[]).length;start+=20){
-      const chunk=(results||[]).slice(start,start+20); const statements=[];
-      for(const e of chunk){
-        statements.push(
-          env.DB.prepare(`UPDATE school_enrollments SET is_current=0,status='completed',updated_at=? WHERE id=?`).bind(now,e.id),
-          env.DB.prepare(`INSERT INTO school_enrollments (id,person_id,institution_name,student_number,grade_level,group_name,school_year,status,is_current,needs_review,created_at,updated_at) VALUES (?,?,?,?,?,?,?,'active',1,1,?,?)`).bind(makeId('enrollment'),e.person_id,e.institution_name,e.student_number,e.grade_level,e.group_name,toYear,now,now),
-          env.DB.prepare(`UPDATE person_programs SET school_year=?,school_followup=1,updated_at=? WHERE person_id=?`).bind(toYear,now,e.person_id),
-          env.DB.prepare(`UPDATE teacher_assignments SET active=0 WHERE person_id=? AND school_year=?`).bind(e.person_id,fromYear)
-        );
-      }
-      if(statements.length)await env.DB.batch(statements);
-      advanced+=chunk.length;
+    for(let start=0;start<(results||[]).length;start+=30){
+      const chunk=(results||[]).slice(start,start+30),statements=[];
+      for(const e of chunk){statements.push(
+        env.DB.prepare(`UPDATE school_enrollments SET school_year=?,needs_review=1,updated_at=? WHERE id=?`).bind(toYear,now,e.id),
+        env.DB.prepare(`UPDATE person_programs SET school_year=?,school_followup=1,updated_at=? WHERE person_id=?`).bind(toYear,now,e.person_id)
+      );}
+      if(statements.length)await env.DB.batch(statements); advanced+=chunk.length;
     }
-    await logAudit(env,'admin','alex','advance_cideb_cycle',null,`${fromYear} → ${toYear} · ${advanced} alumnos`);
-    return json({ok:true,advanced,message:`Nuevo ciclo ${toYear} creado para ${advanced} alumno(s). Grado y grupo quedan marcados para revisión y las asignaciones docentes del ciclo anterior se cerraron.`});
+    await logAudit(env,'admin','alex','advance_cideb_period',null,`${fromYear} → ${toYear} · ${advanced} alumnos`);
+    return json({ok:true,advanced,message:`Periodo ${toYear} aplicado a ${advanced} alumno(s). Se conserva una sola ficha por alumno; grado y grupo quedan marcados para revisión. El maestro actual se mantiene hasta que se haga una transferencia.`});
   }
 
   if (path === "/api/admin/cideb/student/export" && req.method === "GET") {
@@ -3095,7 +3505,7 @@ export default {
     }
 
     const assetResponse = await env.ASSETS.fetch(req);
-    const protectedShell = new Set(["/admin.html","/mi-espacio.html","/docente.html","/familia.html"]).has(url.pathname);
+    const protectedShell = new Set(["/admin.html","/mi-espacio.html","/docente.html","/familia.html","/coordinacion.html"]).has(url.pathname);
     return addSecurityHeaders(assetResponse, protectedShell);
   }
 };

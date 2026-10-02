@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#08111F">
+  <title>NORTIA | Coordinación CIDEB</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="role-body coordinator-body">
+<section class="role-login" id="coordLogin">
+  <div class="role-login-card">
+    <a class="brand" href="/"><span class="brand-mark">N</span><div><small>ACCESO ESCOLAR · CIDEB</small><strong>NORTIA</strong></div></a>
+    <span class="eyebrow">CIDEB · COORDINACIÓN</span>
+    <h1>Vista institucional, permisos limitados.</h1>
+    <p class="muted">Consulta alumnos CIDEB, continuidad publicada y maestro actual. Este acceso no incluye práctica privada, IA ni notas internas.</p>
+    <input id="coordCode" aria-label="Código de acceso de coordinación" placeholder="NT-C-XXXX-XXXX" autocomplete="one-time-code" spellcheck="false" autocapitalize="characters">
+    <button class="primary-btn full" id="coordLoginBtn">ENTRAR</button>
+    <div id="coordLoginStatus" class="status"></div>
+  </div>
+</section>
+
+<div id="coordAgreement" class="agreement-screen" hidden>
+  <div class="agreement-card">
+    <span class="eyebrow">ANTES DE CONTINUAR</span>
+    <h1>Acuerdo de confidencialidad para coordinación</h1>
+    <div class="agreement-text">
+      <p>La información de NORTIA se proporciona exclusivamente para coordinación y continuidad escolar de estudiantes CIDEB.</p>
+      <p>El acceso no autoriza consultar notas profesionales privadas, conversaciones de IA, expedientes terapéuticos ni información fuera del contexto escolar autorizado.</p>
+      <p>Las consultas y transferencias de docentes quedan registradas en auditoría.</p>
+    </div>
+    <label>Nombre completo para firma<input id="coordSignedName"></label>
+    <label class="toggle-line"><input id="coordAgreementCheck" type="checkbox"><span>He leído y acepto este acuerdo.</span></label>
+    <button class="primary-btn full" id="coordAcceptBtn">ACEPTAR Y CONTINUAR</button>
+    <div id="coordAgreementStatus" class="status"></div>
+    <small class="legal-note">Versión 1.0 · Acceso restringido de coordinación escolar.</small>
+  </div>
+</div>
+
+<div id="coordApp" class="role-app coordinator-app" hidden>
+  <header class="role-topbar">
+    <a class="brand" href="/"><span class="brand-mark">N</span><div><small>CIDEB · COORDINACIÓN</small><strong>NORTIA</strong></div></a>
+    <div id="coordIdentity" class="role-identity"></div>
+    <button id="coordLogout" class="client-logout">Salir</button>
+  </header>
+
+  <main class="role-main coordinator-main">
+    <section id="coordDirectoryView">
+      <div class="coordinator-hero">
+        <div><span class="eyebrow">CIDEB · VISTA GENERAL</span><h1>Seguimiento escolar</h1><p class="muted">Un alumno, una ficha y un maestro actual. Usa la transferencia cuando cambie de docente.</p></div>
+        <span class="coordinator-scope-pill">SIN PRÁCTICA PRIVADA · SIN IA</span>
+      </div>
+      <div id="coordStats" class="coordinator-stats"></div>
+      <div class="coordinator-toolbar">
+        <div class="directory-search-box"><span>⌕</span><input id="coordStudentSearch" aria-label="Buscar alumno CIDEB" autocomplete="off" placeholder="Buscar alumno, matrícula, grado o grupo..."></div>
+      </div>
+      <div id="coordStudents" class="coordinator-student-list"></div>
+      <div id="coordPagination" class="directory-pagination"></div>
+    </section>
+
+    <section id="coordStudentDetail" hidden>
+      <div class="role-section-head coordinator-detail-head">
+        <div><button class="teacher-back-link" id="coordBack">← Todos los alumnos</button><span class="eyebrow">CIDEB · FICHA ESCOLAR</span><h2 id="coordStudentName"></h2><p id="coordStudentMeta" class="muted"></p></div>
+        <span class="coordinator-scope-pill">CONTINUIDAD AUTORIZADA</span>
+      </div>
+
+      <div class="coordinator-current-grid">
+        <article><span>Maestro actual</span><strong id="coordCurrentTeacher">Sin asignar</strong></article>
+        <article><span>Periodo</span><strong id="coordCurrentPeriod">—</strong></article>
+        <article><span>Informe</span><strong id="coordReportState">Pendiente</strong></article>
+      </div>
+
+      <div class="coordinator-detail-grid">
+        <section class="panel coordinator-report-panel">
+          <div class="panel-head"><div><span class="eyebrow">CONTINUIDAD PUBLICADA</span><h3>Lo que coordinación puede consultar</h3></div></div>
+          <div id="coordContinuity"></div>
+        </section>
+        <section class="panel coordinator-transfer-panel">
+          <span class="eyebrow">MAESTRO ACTUAL</span><h3>Transferir a otro docente</h3>
+          <p class="muted">El cambio no crea otro expediente. El docente anterior pierde acceso y el nuevo recibe la continuidad publicada.</p>
+          <label>Nuevo docente<select id="coordTransferTeacher"><option value="">Selecciona docente</option></select></label>
+          <label>Motivo / nota administrativa<textarea id="coordTransferNote" rows="3" placeholder="Opcional. Ej. Cambio de grupo o inicio de periodo."></textarea></label>
+          <button class="primary-btn full" id="coordTransferBtn">CONFIRMAR TRANSFERENCIA</button>
+          <div id="coordTransferStatus" class="status"></div>
+          <div id="coordLastTransfer" class="coordinator-last-transfer"></div>
+        </section>
+      </div>
+
+      <section class="panel coordinator-professional-shared">
+        <div class="panel-head"><div><span class="eyebrow">CONTENIDO PROFESIONAL PUBLICADO</span><h3>Aportes compartidos por Alex</h3></div><small>Solo información autorizada para el contexto escolar</small></div>
+        <div id="coordProfessionalObservations"></div>
+      </section>
+    </section>
+  </main>
+</div>
+<script src="/coordinacion.js"></script>
+</body>
+</html>

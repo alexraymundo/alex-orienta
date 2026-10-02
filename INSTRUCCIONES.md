@@ -1,27 +1,70 @@
-# NORTIA V8.3.1 — Revisión final de calidad y UX
+# NORTIA V8.4 — Coordinación CIDEB + transferencias de docente
 
-Parte de V8.2 y consolida una revisión completa desde cinco perfiles: visitante, Mi Espacio, familia, docente y administrador.
+## Modelo escolar definitivo
+NORTIA mantiene **una sola ficha permanente por alumno**. No crea un alumno nuevo cada semestre.
 
-## Mejoras principales
-- Mi práctica y CIDEB permanecen visual y funcionalmente separados.
-- El resumen CIDEB se centra en pendientes y accesos rápidos, no en repetir todos los módulos.
-- Portal Familiar por pestañas: Resumen / Compartir observación / Historial.
-- Docentes y familias cuentan con borrador local automático durante la sesión.
-- El informe docente trata muestras menores a 3 registros como “datos iniciales”.
-- Se separaron claramente las notas internas de Alex de las respuestas visibles para docente/familia.
-- Dashboard privado con indicadores accionables.
-- Turnstile es opcional: sin claves, la agenda pública funciona con rate limit. Si solo se configura una clave, el sistema lo detecta como configuración incompleta.
-- Validación de contacto, correo, fechas, horarios y tipo de servicio.
-- Para menores, los campos de tutor se muestran y envían solo cuando corresponden.
-- Las citas solo se vinculan automáticamente por correo único, no por teléfono compartido.
-- Alertas AI del dashboard muestran alertas pendientes de revisión, no un acumulado histórico duplicado.
-- Mejoras de contraste, teclado, foco, touch targets, móvil y reducción de movimiento.
-- Mensajes operativos no bloqueantes (toasts) en lugar de alertas del navegador cuando aplica.
+La ficha escolar muestra únicamente:
+- periodo actual;
+- grado y grupo actuales;
+- **un maestro actual**;
+- continuidad publicada vigente.
+
+La base conserva un historial técnico mínimo de transferencias únicamente para auditoría. Ese historial no duplica el expediente del alumno.
+
+## Periodos CIDEB
+Usa etiquetas simples:
+- `2027-1` = enero–junio 2027
+- `2027-2` = agosto–diciembre 2027
+
+`Nuevo periodo` actualiza la ficha escolar actual. No crea otra ficha y no cambia al maestro automáticamente.
+
+## Transferir docente
+Desde la ficha CIDEB del alumno, Alex puede usar `TRANSFERIR DOCENTE`.
+
+Al confirmar:
+1. se cierra el acceso activo del maestro anterior a ese alumno;
+2. el nuevo maestro se convierte en el maestro actual;
+3. se guarda una fotografía de la continuidad que estaba publicada en ese momento;
+4. el nuevo docente recibe esa entrega en su portal;
+5. las notas privadas, terapia, IA y contenido no publicado permanecen fuera de la transferencia.
+
+Si no había un informe publicado, la transferencia puede realizarse, pero el portal docente indicará que todavía no existía un resumen profesional para entregar.
+
+Alex puede deshacer la última transferencia durante una ventana corta si el nuevo docente todavía no ha enviado observaciones.
+
+## Nuevo rol: Coordinación CIDEB
+Acceso: `/coordinacion.html`
+
+Código nuevo: `NT-C-XXXX-XXXX`
+
+Coordinación puede:
+- consultar todos los alumnos CIDEB;
+- buscar por nombre/matrícula/grado/grupo;
+- ver maestro actual y periodo;
+- consultar únicamente continuidad escolar publicada;
+- ver aportes profesionales que Alex publicó para el contexto escolar;
+- transferir el alumno de un maestro a otro.
+
+Coordinación **no puede**:
+- entrar a Mi práctica;
+- consultar NORTIA Reflexión ni conversaciones de IA;
+- ver notas privadas o terapia;
+- eliminar expedientes;
+- administrar seguridad global;
+- modificar observaciones privadas de Alex.
+
+Alex administra coordinadores desde `CIDEB > Coordinación`: crear acceso, desactivar/reactivar y regenerar código.
+
+## Portal Docente
+El docente solo ve alumnos que tiene asignados actualmente.
+
+Cuando recibe un alumno transferido aparece `CONTINUIDAD RECIBIDA`, con la información que estaba publicada cuando se realizó el cambio. El maestro anterior deja de tener acceso activo al alumno.
 
 ## Base de datos
-La app agrega automáticamente `private_note` a observaciones docentes/familiares cuando haga falta. `migration-v8.3.sql` queda como respaldo para una migración manual desde V8.2; no necesitas ejecutarla si dejas que NORTIA haga la actualización automática.
+Se agregan:
+- `coordinators`
+- `teacher_transfers`
 
-## Antes de datos reales de menores
-Sigue pendiente la validación jurídica del aviso de privacidad, consentimiento y acuerdos de confidencialidad según el contexto real de uso.
+La aplicación intenta crear estas tablas automáticamente. También se incluye `migration-v8.4.sql` como respaldo.
 
-No necesitas Zero Trust para que V8.3.1 funcione. MFA en GitHub/Cloudflare sigue siendo recomendable y se administra fuera de NORTIA.
+No es necesario borrar ni recrear D1.

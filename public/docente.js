@@ -47,26 +47,73 @@ const teacherAreaLabels={attention:"Atención",instructions:"Instrucciones",orga
 const trendFieldMap={attention:"attention_support",instructions:"instructions_support",organization:"organization_support",peers:"peer_support",frustration:"frustration_support",transitions:"transitions_support",autonomy:"autonomy_support",help_seeking:"help_seeking_support"};
 function frequencyText(dist){
   const n=Number(dist?.n||0);
-  if(!n)return"Sin datos";
-  if(n<3)return`Datos iniciales · n=${n}`;
+  if(!n)return"Sin registros";
+  if(n<3)return`${n} registro${n===1?"":"s"} · evidencia inicial`;
   const pct=Number(dist.higher_support_pct||0);
-  if(pct<25)return"Pocas veces se registró apoyo moderado/frecuente";
-  if(pct<60)return"En parte de los registros se observó apoyo moderado/frecuente";
-  return"En la mayoría de registros se observó apoyo moderado/frecuente";
+  if(pct<25)return"Poca frecuencia de apoyo moderado/frecuente";
+  if(pct<60)return"Frecuencia intermedia de apoyo moderado/frecuente";
+  return"Frecuencia alta de apoyo moderado/frecuente";
+}
+function observedTeacherAreas(snapshot){
+  return Object.entries(teacherAreaLabels)
+    .map(([key,label])=>({key,label,data:snapshot?.distribution?.[key]||{}}))
+    .filter(item=>Number(item.data?.n||0)>0);
+}
+function initialAreaCards(snapshot){
+  const items=observedTeacherAreas(snapshot);
+  if(!items.length)return`<p class="muted">Todavía no hay áreas observadas registradas.</p>`;
+  return`<div class="initial-evidence-note"><strong>Información todavía inicial</strong><span>Con menos de 3 registros por área no se muestran porcentajes ni barras de tendencia. Esto evita que una sola observación parezca un patrón.</span></div><div class="observed-area-chips">${items.map(item=>`<span><b>${esc(item.label)}</b><small>${Number(item.data.n)} registro${Number(item.data.n)===1?"":"s"}</small></span>`).join("")}</div>`;
+}
+function supportVisual(snapshot){
+  const items=observedTeacherAreas(snapshot);
+  const stable=items.filter(item=>Number(item.data?.n||0)>=3);
+  const initial=items.filter(item=>Number(item.data?.n||0)<3);
+  if(!stable.length)return initialAreaCards(snapshot);
+  const rows=stable.map(item=>{const pct=Number(item.data.higher_support_pct||0);return`<div class="support-row enhanced"><div><strong>${esc(item.label)}</strong><small>${frequencyText(item.data)}</small></div><div class="support-track"><i style="width:${pct}%"></i></div><b>${pct}%</b></div>`}).join("");
+  const initialBlock=initial.length?`<div class="initial-evidence-secondary"><small>Áreas con evidencia todavía inicial</small><div class="observed-area-chips compact">${initial.map(item=>`<span><b>${esc(item.label)}</b><small>${Number(item.data.n)} registro${Number(item.data.n)===1?"":"s"}</small></span>`).join("")}</div></div>`:"";
+  return rows+initialBlock;
+}
+function contextVisual(snapshot){
+  const contexts=snapshot.contexts||[];
+  if(!contexts.length)return`<p class="muted">Aún no hay contextos registrados.</p>`;
+  const total=contexts.reduce((sum,x)=>sum+Number(x.count||0),0);
+  if(total<3)return`<div class="initial-evidence-note slim"><strong>Contexto inicial</strong><span>Se mostrarán comparaciones cuando existan al menos 3 registros.</span></div><div class="context-count-chips">${contexts.map(x=>`<span><b>${esc(x.context)}</b><small>${Number(x.count)} registro${Number(x.count)===1?"":"s"}</small></span>`).join("")}</div>`;
+  const max=Math.max(1,...contexts.map(x=>Number(x.count)));
+  return contexts.map(x=>`<div class="context-visual-row"><div><strong>${esc(x.context)}</strong><small>${x.count} registro${Number(x.count)===1?"":"s"}</small></div><div class="context-track"><i style="width:${Number(x.count)/max*100}%"></i></div></div>`).join("");
 }
 function chart(snapshot){
-  const entries=Object.entries(teacherAreaLabels);
-  $("#teacherSupportChart").innerHTML=entries.map(([k,l])=>{const d=snapshot.distribution?.[k],pct=d?.higher_support_pct==null?0:Number(d.higher_support_pct);return`<div class="support-row enhanced"><div><strong>${l}</strong><small>${frequencyText(d)}</small></div><div class="support-track"><i style="width:${pct}%"></i></div><b>${d?.n?`n=${d.n}`:"—"}</b></div>`}).join("");
-  const max=Math.max(1,...(snapshot.contexts||[]).map(x=>Number(x.count)));
-  $("#teacherContextChart").innerHTML=(snapshot.contexts||[]).length?snapshot.contexts.map(x=>`<div class="context-visual-row"><div><strong>${esc(x.context)}</strong><small>${x.count} registro${Number(x.count)===1?"":"s"}</small></div><div class="context-track"><i style="width:${Number(x.count)/max*100}%"></i></div></div>`).join(""):`<p class="muted">Aún no hay suficientes registros revisados.</p>`;
-  $("#teacherTrendChart").innerHTML=(snapshot.trend||[]).length?snapshot.trend.map(row=>{const n=[row.attention_support,row.instructions_support,row.organization_support,row.peer_support,row.frustration_support,row.transitions_support,row.autonomy_support,row.help_seeking_support].filter(v=>v!=null&&v!=="").length;return`<div class="trend-context-row"><strong>${esc(fmtDate(row.observation_date)||"—")}</strong><span>${esc(row.context||"Sin contexto")}</span><small>${n} área${n===1?"":"s"} registrada${n===1?"":"s"}</small></div>`}).join(""):`<p class="muted">Aún no hay registros revisados.</p>`;
+  $("#teacherSupportChart").innerHTML=supportVisual(snapshot);
+  $("#teacherContextChart").innerHTML=contextVisual(snapshot);
+  $("#teacherTrendChart").innerHTML=(snapshot.trend||[]).length?snapshot.trend.map(row=>{const n=[row.attention_support,row.instructions_support,row.organization_support,row.peer_support,row.frustration_support,row.transitions_support,row.autonomy_support,row.help_seeking_support].filter(v=>v!=null&&v!=="").length;return`<div class="trend-context-row"><strong>${esc(fmtDate(row.observation_date)||"—")}</strong><span>${esc(row.context||"Sin contexto")}</span><small>${row.source==="professional"?"Profesional":"Docente"} · ${n} área${n===1?"":"s"} registrada${n===1?"":"s"}</small></div>`}).join(""):`<p class="muted">Aún no hay registros revisados.</p>`;
 }
 function reportKpis(snapshot){
   const vals=Object.entries(snapshot.distribution||{}).filter(([,d])=>Number(d?.n||0)>=3&&d.higher_support_pct!=null).sort((a,b)=>Number(b[1].higher_support_pct)-Number(a[1].higher_support_pct));
-  const top=vals[0],ctx=(snapshot.contexts||[])[0];
-  return`<article><span>Observaciones revisadas</span><strong>${snapshot.observation_count||0}</strong><small>Registros considerados</small></article><article><span>Área a observar</span><strong>${top?esc(teacherAreaLabels[top[0]]):"—"}</strong><small>${top?frequencyText(top[1]):"Sin datos"}</small></article><article><span>Contexto más registrado</span><strong>${ctx?esc(ctx.context):"—"}</strong><small>${ctx?ctx.count+" registros":"Sin datos"}</small></article><article><span>Última revisión</span><strong>${snapshot.last_reviewed_at?new Date(snapshot.last_reviewed_at).toLocaleDateString():"—"}</strong><small>Información revisada</small></article>`;
+  const top=vals[0],ctx=(snapshot.contexts||[])[0],count=Number(snapshot.observation_count||0);
+  return`<article><span>Observaciones revisadas</span><strong>${count}</strong><small>${count<3?"Información todavía inicial":"Registros considerados"}</small></article><article><span>Tendencia por área</span><strong>${top?esc(teacherAreaLabels[top[0]]):"Aún sin tendencia"}</strong><small>${top?frequencyText(top[1]):"Se requiere más evidencia"}</small></article><article><span>${count<3?"Contexto registrado":"Contexto más registrado"}</span><strong>${ctx?esc(ctx.context):"—"}</strong><small>${ctx?ctx.count+" registro"+(Number(ctx.count)===1?"":"s"):"Sin datos"}</small></article><article><span>Última revisión</span><strong>${snapshot.last_reviewed_at?new Date(snapshot.last_reviewed_at).toLocaleDateString():"—"}</strong><small>Información revisada</small></article>`;
 }
-async function openStudent(id){currentStudent=id;const d=await req(`/api/teacher/student/${id}`);$("#teacherStudentListView").hidden=true;$("#teacherStudentDetail").hidden=false;setTeacherStudentTab("summary");$("#teacherStudentName").textContent=d.person.full_name;$("#teacherStudentMeta").textContent=[d.program?.grade_level,d.program?.school_year,d.program?.school_name].filter(Boolean).join(" · ");const c=d.continuity||{};const approved=!!c.approved_at;$("#teacherApprovedReport").hidden=!approved;$("#teacherReportState").innerHTML=approved?"":`<div class="report-pending-card"><span class="eyebrow">INFORME EN PREPARACIÓN</span><h3>Aún no hay un informe de continuidad publicado.</h3><p>El profesional está revisando la información. Tus observaciones pueden seguir registrándose y aparecerán en el informe cuando sean revisadas.</p></div>`;if(approved){$("#teacherReportKpis").innerHTML=reportKpis(d.snapshot);$("#teacherContinuity").innerHTML=`<article class="continuity-feature"><span>DESCRIPCIÓN GENERAL</span><h3>Panorama actual</h3><p>${esc(c.general_description||"—")}</p></article><div class="continuity-detail-grid"><article><span>FORTALEZAS OBSERVADAS</span><p>${esc(c.strengths||"—")}</p></article><article><span>PUEDE REQUERIR APOYO EN</span><p>${esc(c.support_needs||"—")}</p></article><article><span>ESTRATEGIAS QUE HAN FUNCIONADO</span><p>${esc(c.strategies||"—")}</p></article><article><span>ASPECTOS A SEGUIR OBSERVANDO</span><p>${esc(c.watch_items||"—")}</p></article></div><div class="teacher-report-disclaimer">Este informe resume observaciones escolares revisadas y contenido aprobado por el profesional. No es una evaluación clínica ni un diagnóstico.</div>`;chart(d.snapshot);}$("#teacherOwnObservations").innerHTML=d.own_observations.length?d.own_observations.map(o=>`<article class="note-card"><span>${esc(fmtDate(o.observation_date))} · ${esc(o.subject||o.context||"")}</span><p>${esc(o.description)}</p><small>${o.status==="reviewed"?"Revisado":"Pendiente de revisión"}${o.professional_comment?" · Comentario profesional: "+esc(o.professional_comment):""}</small></article>`).join(""):`<p class="muted">Aún no has enviado observaciones.</p>`;const today=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Monterrey',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());$("#tObsDate").max=today;$("#tObsDate").value=today;restoreTeacherDraft();}
+
+function transferReceivedHtml(transfer){
+  if(!transfer)return "";
+  const previous=transfer.from_teacher_name?esc(transfer.from_teacher_name):"Asignación inicial";
+  const date=fmtDate(transfer.transfer_date)||"—";
+  const hasSnapshot=[transfer.general_description,transfer.strengths,transfer.support_needs,transfer.strategies,transfer.watch_items].some(Boolean);
+  return `<section class="transfer-received-card">
+    <div class="transfer-received-head">
+      <div><span class="eyebrow">CONTINUIDAD RECIBIDA</span><h3>Entrega para iniciar con este alumno</h3></div>
+      <span class="transfer-date-pill">${esc(date)}</span>
+    </div>
+    <p class="transfer-origin">${transfer.from_teacher_name?`Docente anterior: <strong>${previous}</strong>`:"Primera asignación de docente"}${transfer.school_period?` · Periodo ${esc(transfer.school_period)}`:""}</p>
+    ${hasSnapshot?`<div class="transfer-received-grid">
+      ${transfer.general_description?`<article><span>Panorama</span><p>${esc(transfer.general_description)}</p></article>`:""}
+      ${transfer.strengths?`<article><span>Fortalezas</span><p>${esc(transfer.strengths)}</p></article>`:""}
+      ${transfer.support_needs?`<article><span>Apoyos</span><p>${esc(transfer.support_needs)}</p></article>`:""}
+      ${transfer.strategies?`<article><span>Estrategias útiles</span><p>${esc(transfer.strategies)}</p></article>`:""}
+      ${transfer.watch_items?`<article><span>Seguir observando</span><p>${esc(transfer.watch_items)}</p></article>`:""}
+    </div>`:`<div class="transfer-empty-note">La transferencia quedó registrada, pero al momento del cambio todavía no había un informe de continuidad publicado.</div>`}
+    ${transfer.transfer_note?`<small class="transfer-admin-note">Nota de coordinación: ${esc(transfer.transfer_note)}</small>`:""}
+  </section>`;
+}
+async function openStudent(id){currentStudent=id;const d=await req(`/api/teacher/student/${id}`);$("#teacherStudentListView").hidden=true;$("#teacherStudentDetail").hidden=false;setTeacherStudentTab("summary");$("#teacherStudentName").textContent=d.person.full_name;$("#teacherStudentMeta").textContent=[d.enrollment?.grade_level||d.program?.grade_level,d.enrollment?.school_year||d.program?.school_year,d.program?.school_name].filter(Boolean).join(" · ");const c=d.continuity||{};const approved=!!c.approved_at;$("#teacherApprovedReport").hidden=!approved;$("#teacherReportState").innerHTML=`${transferReceivedHtml(d.latest_transfer)}${approved?"":`<div class="report-pending-card"><span class="eyebrow">INFORME EN PREPARACIÓN</span><h3>Aún no hay un informe de continuidad publicado.</h3><p>El profesional está revisando la información. Tus observaciones pueden seguir registrándose y aparecerán en el informe cuando sean revisadas.</p></div>`}`;if(approved){$("#teacherReportKpis").innerHTML=reportKpis(d.snapshot);const pro=(d.professional_observations||[]);const proBlock=pro.length?`<section class="teacher-professional-observations"><div class="report-card-head"><div><span class="eyebrow">APORTES DEL PROFESIONAL</span><h3>Observaciones compartidas por Alex</h3></div><small>Solo contenido publicado</small></div><div class="teacher-professional-list">${pro.map(o=>`<article><div><strong>${esc(fmtDate(o.observation_date)||"—")}</strong><span>${esc(o.context||o.subject||"Seguimiento profesional")}</span></div><p>${esc(o.description||"")}</p>${o.strategy_used?`<small><b>Estrategia:</b> ${esc(o.strategy_used)}</small>`:""}${o.recommendation_text?`<small><b>Recomendación:</b> ${esc(o.recommendation_text)}</small>`:""}</article>`).join("")}</div></section>`:"";$("#teacherContinuity").innerHTML=`<article class="continuity-feature"><span>DESCRIPCIÓN GENERAL</span><h3>Panorama actual</h3><p>${esc(c.general_description||"—")}</p></article><div class="continuity-detail-grid"><article><span>FORTALEZAS OBSERVADAS</span><p>${esc(c.strengths||"—")}</p></article><article><span>PUEDE REQUERIR APOYO EN</span><p>${esc(c.support_needs||"—")}</p></article><article><span>ESTRATEGIAS QUE HAN FUNCIONADO</span><p>${esc(c.strategies||"—")}</p></article><article><span>ASPECTOS A SEGUIR OBSERVANDO</span><p>${esc(c.watch_items||"—")}</p></article></div>${proBlock}<div class="teacher-report-disclaimer">Este informe resume observaciones escolares revisadas y contenido publicado por el profesional. No es una evaluación clínica ni un diagnóstico.</div>`;chart(d.snapshot);}$("#teacherOwnObservations").innerHTML=d.own_observations.length?d.own_observations.map(o=>`<article class="note-card"><span>${esc(fmtDate(o.observation_date))} · ${esc(o.subject||o.context||"")}</span><p>${esc(o.description)}</p><small>${o.status==="reviewed"?"Revisado":"Pendiente de revisión"}${o.professional_comment?" · Comentario profesional: "+esc(o.professional_comment):""}</small></article>`).join(""):`<p class="muted">Aún no has enviado observaciones.</p>`;const today=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Monterrey',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());$("#tObsDate").max=today;$("#tObsDate").value=today;restoreTeacherDraft();}
 $("#backToStudents").onclick=()=>{$("#teacherStudentDetail").hidden=true;$("#teacherStudentListView").hidden=false;};
 $("#submitTeacherObservation").onclick=async()=>{const btn=$("#submitTeacherObservation");if(btn.disabled)return;btn.disabled=true;const label=btn.textContent;btn.textContent="ENVIANDO…";try{const p={person_id:currentStudent,observation_date:$("#tObsDate").value,subject:$("#tObsSubject").value,context:$("#tObsContext").value,description:$("#tObsDescription").value,antecedent:$("#tObsAntecedent").value,strategy_used:$("#tObsStrategy").value,result_text:$("#tObsResult").value,additional_comments:$("#tObsAdditional").value};areas.forEach(([k])=>{const value=$("#rate_"+k).value;if(value!=="")p[k]=value;});await req("/api/teacher/observation",{method:"POST",body:JSON.stringify(p)});clearTeacherDraft();$("#teacherObsStatus").style.color="#86EFAC";$("#teacherObsStatus").textContent="Observación enviada a revisión.";["#tObsDescription","#tObsAntecedent","#tObsStrategy","#tObsResult","#tObsAdditional"].forEach(x=>$(x).value="");await openStudent(currentStudent);setTeacherStudentTab("history");}catch(e){$("#teacherObsStatus").style.color="#FDA4AF";$("#teacherObsStatus").textContent=e.message;}finally{btn.disabled=false;btn.textContent=label;}};
 (async()=>{try{const s=await req("/api/teacher/session");if(s.authenticated)await boot();else show("teacherLogin");}catch{show("teacherLogin");}})();

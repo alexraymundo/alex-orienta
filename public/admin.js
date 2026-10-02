@@ -61,6 +61,7 @@ async function loadPrivateData() {
     loadPeople(),
     loadNotifications(),
     loadTeachers(),
+    loadCoordinators(),
     loadModuleObservations(),
     loadAudit(),
     loadDeploymentSecurityStatus(),
@@ -119,7 +120,7 @@ $("#logoutBtn").addEventListener("click", async () => {
   location.reload();
 });
 
-const cidebTabs = new Set(["cideb","students","teachers","observations","continuity","families","cideb-security"]);
+const cidebTabs = new Set(["cideb","students","teachers","coordination","observations","continuity","families","cideb-security"]);
 let activeWorkspace = "practice";
 
 function setAdminWorkspace(workspace, openDefault = false) {
@@ -179,6 +180,7 @@ function openAdminTab(tab) {
     cideb: "Resumen CIDEB",
     students: "Alumnos",
     teachers: "Docentes",
+    coordination: "Coordinación",
     observations: "Observaciones",
     continuity: "Informes para docentes",
     families: "Familias",
@@ -194,6 +196,7 @@ function openAdminTab(tab) {
     loadCidebSummary();
   }
   if (tab === "students") loadCidebStudents(1);
+  if (tab === "coordination") loadCoordinators();
   if (tab === "security") { loadAudit(); loadDeploymentSecurityStatus(); }
 }
 
@@ -225,11 +228,25 @@ $("#cancelNewTeacherBtn")?.addEventListener("click", () => {
   $("#teacherListPanel").hidden = false;
 });
 
-$$("[data-observation-source]").forEach(button => button.addEventListener("click", () => {
+$$('[data-observation-source]').forEach(button => button.addEventListener('click', () => {
   const source = button.dataset.observationSource;
-  $$("[data-observation-source]").forEach(x => { const active=x===button; x.classList.toggle("active",active); x.setAttribute("aria-selected",active?"true":"false"); });
-  $("#teacherObservationPanel").hidden = source !== "teacher";
-  $("#familyObservationPanel").hidden = source !== "family";
+  $$('[data-observation-source]').forEach(x => {
+    const active=x===button;
+    x.classList.toggle('active',active);
+    x.setAttribute('aria-selected',active?'true':'false');
+  });
+  ['teacher','family','professional'].forEach(name => {
+    const panel=$(`#${name}ObservationPanel`);
+    if(!panel)return;
+    panel.hidden=name!==source;
+    panel.classList.toggle('active',name===source);
+  });
+  if(source==='professional'){
+    const today=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Monterrey',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+    if(!$('#pObsDate').value)$('#pObsDate').value=today;
+    $('#pObsDate').max=today;
+    loadProfessionalObservations();
+  }
 }));
 
 function setReportStep(step) {
@@ -396,7 +413,7 @@ async function loadCidebStudents(page=1) {
     $("#cidebDirectoryCount").textContent=`${d.pagination.total} alumno${d.pagination.total===1?'':'s'}`;
     renderDirectoryPagination(d.pagination);
     if(!cidebDirectoryFiltersLoaded){
-      fillDirectorySelect("#cidebYearFilter",d.filters.years,"Todos los ciclos");
+      fillDirectorySelect("#cidebYearFilter",d.filters.years,"Todos los periodos");
       fillDirectorySelect("#cidebGradeFilter",d.filters.grades,"Todos los grados");
       fillDirectorySelect("#cidebGroupFilter",d.filters.groups,"Todos los grupos");
       fillDirectorySelect("#cidebTeacherFilter",d.filters.teachers,"Todos los docentes","id");
@@ -477,7 +494,7 @@ async function exportCidebDirectory() {
         "Edad",
         "Grado",
         "Grupo",
-        "Ciclo escolar",
+        "Periodo escolar",
         "Docente(s)",
         "Estado",
         "Correo",
@@ -543,18 +560,19 @@ async function openCidebStudent(id) {
   try {
     const d=await api(`/api/admin/cideb/student?person_id=${encodeURIComponent(id)}`);
     rememberStudent({...d.person,student_number:d.enrollment?.student_number});
-    const e=d.enrollment||{}, teacherNames=(d.teachers||[]).map(x=>x.full_name).join(", ")||"Sin docente asignado";
+    const e=d.enrollment||{}, teacherName=d.current_teacher?.full_name||"Sin docente asignado";
     $("#cidebStudentQuickContent").innerHTML=`
       <span class="eyebrow">FICHA ESCOLAR</span><h2>${escapeHTML(d.person.full_name)}</h2>
-      <div class="quick-student-kpis"><article><span>Matrícula</span><strong>${escapeHTML(e.student_number||"—")}</strong></article><article><span>Ciclo</span><strong>${escapeHTML(e.school_year||"—")}</strong></article><article><span>Observaciones</span><strong>${d.counts?.observations||0}</strong></article></div>
+      <div class="quick-student-kpis"><article><span>Matrícula</span><strong>${escapeHTML(e.student_number||"—")}</strong></article><article><span>Periodo</span><strong>${escapeHTML(e.school_year||"—")}</strong></article><article><span>Observaciones</span><strong>${d.counts?.observations||0}</strong></article></div>
       <div class="quick-student-form">
-        <div class="two-cols"><label>Matrícula / ID<input id="quickStudentNumber" value="${escapeHTML(e.student_number||"")}"></label><label>Ciclo<input id="quickStudentYear" value="${escapeHTML(e.school_year||"")}"></label></div>
+        <div class="two-cols"><label>Matrícula / ID<input id="quickStudentNumber" value="${escapeHTML(e.student_number||"")}"></label><label>Periodo<input id="quickStudentYear" value="${escapeHTML(e.school_year||"")}"></label></div>
         <div class="two-cols"><label>Grado<input id="quickStudentGrade" value="${escapeHTML(e.grade_level||"")}"></label><label>Grupo<input id="quickStudentGroup" value="${escapeHTML(e.group_name||"")}"></label></div>
-        ${e.needs_review?`<div class="review-needed-note">Revisa grado y grupo para el nuevo ciclo.</div>`:""}
-        <label>Docente(s)<div class="readonly-field">${escapeHTML(teacherNames)}</div></label>
+        ${e.needs_review?`<div class="review-needed-note">Revisa grado y grupo para el nuevo periodo.</div>`:""}
+        <label>Maestro actual<div class="readonly-field current-teacher-field"><strong>${escapeHTML(teacherName)}</strong><small>${d.latest_transfer?.transfer_date?`Última transferencia: ${escapeHTML(d.latest_transfer.transfer_date)}`:""}</small></div></label>
       </div>
       <div class="quick-actions">
         <button class="primary-btn" data-action="save-school-student" data-id="${escapeHTML(id)}">GUARDAR ESCOLAR</button>
+        <button class="secondary-btn" data-action="open-teacher-transfer" data-id="${escapeHTML(id)}" data-name="${escapeHTML(d.person.full_name)}">${d.current_teacher?"TRANSFERIR DOCENTE":"ASIGNAR DOCENTE"}</button>
         <button class="secondary-btn" data-action="open-student-report" data-id="${escapeHTML(id)}">INFORME VISUAL</button>
         <button class="secondary-btn" data-action="export-student" data-id="${escapeHTML(id)}" data-name="${escapeHTML(d.person.full_name)}">EXPORTAR DATOS</button>
         ${Number(d.program?.therapy_with_alex) ? `<button class="text-action" data-action="open-professional-record" data-id="${escapeHTML(id)}">Abrir proceso privado →</button>` : ""}
@@ -924,7 +942,7 @@ function bindSchoolSearch(inputSelector, selectSelector) {
   const input=$(inputSelector); if(!input)return;
   input.addEventListener('input',()=>{clearTimeout(schoolOptionSearchTimer);schoolOptionSearchTimer=setTimeout(()=>loadSchoolOptions(selectSelector,input.value.trim()),220);});
 }
-[["#teacherStudentSearchAdmin","#teacherStudent"],["#continuityPersonSearch","#continuityPerson"],["#familyPersonSearch","#familyPerson"],["#teacherAssignSearch","#teacherAssignStudent"]].forEach(([i,s])=>bindSchoolSearch(i,s));
+[["#continuityPersonSearch","#continuityPerson"],["#familyPersonSearch","#familyPerson"],["#teacherAssignSearch","#teacherAssignStudent"],["#professionalObservationStudentSearch","#professionalObservationStudent"]].forEach(([i,s])=>bindSchoolSearch(i,s));
 
 async function loadPeople() {
   const data=await api("/api/admin/people");
@@ -1554,15 +1572,125 @@ async function manageTeacher(id){
   await loadSchoolOptions("#teacherAssignStudent");
 }
 $("#closeTeacherManageBtn")?.addEventListener("click",()=>{$("#teacherManagePanel").hidden=true;currentManagedTeacherId="";});
-$("#assignTeacherStudentBtn")?.addEventListener("click",async()=>{if(!currentManagedTeacherId||!$("#teacherAssignStudent").value)return;try{await api("/api/admin/teachers/assign",{method:"POST",body:JSON.stringify({teacher_id:currentManagedTeacherId,person_id:$("#teacherAssignStudent").value,school_year:$("#teacherAssignYear").value})});$("#teacherManageStatus").textContent="Alumno asignado.";await Promise.all([manageTeacher(currentManagedTeacherId),loadTeachers()]);}catch(e){$("#teacherManageStatus").textContent=e.message;}});
+$("#assignTeacherStudentBtn")?.addEventListener("click",async()=>{if(!currentManagedTeacherId||!$("#teacherAssignStudent").value)return;try{await api("/api/admin/teachers/assign",{method:"POST",body:JSON.stringify({teacher_id:currentManagedTeacherId,person_id:$("#teacherAssignStudent").value})});$("#teacherManageStatus").style.color="#86EFAC";$("#teacherManageStatus").textContent="Asignado como maestro actual.";await Promise.all([manageTeacher(currentManagedTeacherId),loadTeachers(),loadCidebStudents(cidebDirectoryPage)]);}catch(e){$("#teacherManageStatus").style.color="#FDA4AF";$("#teacherManageStatus").textContent=e.message;}});
 $("#toggleTeacherAccessBtn")?.addEventListener("click",async()=>{if(!currentManagedTeacherId)return;const active=$("#toggleTeacherAccessBtn").dataset.active!=="1";await api("/api/admin/teachers/access",{method:"POST",body:JSON.stringify({teacher_id:currentManagedTeacherId,active})});await Promise.all([manageTeacher(currentManagedTeacherId),loadTeachers()]);});
 $("#regenTeacherCodeBtn")?.addEventListener("click",async()=>{if(!currentManagedTeacherId||!confirm("El código anterior dejará de funcionar y el docente deberá aceptar nuevamente el acuerdo. ¿Continuar?"))return;const d=await api("/api/admin/teachers/regenerate",{method:"POST",body:JSON.stringify({teacher_id:currentManagedTeacherId})});$("#teacherManageCode").hidden=false;$("#teacherManageCode").innerHTML=`<span>NUEVO CÓDIGO DOCENTE</span><strong>${escapeHTML(d.access_code)}</strong><small>El código anterior quedó invalidado.</small>`;await Promise.all([manageTeacher(currentManagedTeacherId),loadTeachers()]);});
-$("#createTeacherBtn").addEventListener("click",async()=>{try{const d=await api("/api/admin/teachers/create",{method:"POST",body:JSON.stringify({full_name:$("#teacherName").value,email:$("#teacherEmail").value,school_name:$("#teacherSchool").value,person_id:$("#teacherStudent").value,school_year:$("#teacherYear").value})});$("#teacherCreateResult").hidden=false;$("#teacherCreateResult").innerHTML=`<span>CÓDIGO DOCENTE</span><strong>${escapeHTML(d.access_code)}</strong><small>Entrar en /docente.html. El docente deberá aceptar el acuerdo antes de ver información.</small>`;$("#teacherAdminStatus").style.color="#86EFAC";$("#teacherAdminStatus").textContent=`Acceso creado para ${d.student_name}.`;await loadTeachers();}catch(e){$("#teacherAdminStatus").style.color="#FDA4AF";$("#teacherAdminStatus").textContent=e.message;}});
+$("#createTeacherBtn").addEventListener("click",async()=>{try{const d=await api("/api/admin/teachers/create",{method:"POST",body:JSON.stringify({full_name:$("#teacherName").value,email:$("#teacherEmail").value,school_name:$("#teacherSchool").value})});$("#teacherCreateResult").hidden=false;$("#teacherCreateResult").innerHTML=`<span>CÓDIGO DOCENTE</span><strong>${escapeHTML(d.access_code)}</strong><small>Entrar en /docente.html. Después asigna alumnos desde su ficha o desde gestionar docente si aún no tienen maestro.</small>`;$("#teacherAdminStatus").style.color="#86EFAC";$("#teacherAdminStatus").textContent="Acceso docente creado.";await loadTeachers();}catch(e){$("#teacherAdminStatus").style.color="#FDA4AF";$("#teacherAdminStatus").textContent=e.message;}});
 
+
+
+async function loadCoordinators(){
+  const box=$("#adminCoordinatorsList"); if(!box)return;
+  try{const d=await api('/api/admin/coordinators');const rows=d.coordinators||[];box.innerHTML=rows.length?rows.map(c=>`<article class="admin-record"><div><strong>${escapeHTML(c.full_name)}</strong><span>${escapeHTML(c.email||'Sin correo')} · ${c.active?'Activo':'Desactivado'} · ••••${escapeHTML(c.access_hint||'----')}</span></div><div class="record-actions"><button class="text-action" data-action="toggle-coordinator" data-id="${escapeHTML(c.id)}" data-active="${c.active?1:0}">${c.active?'Desactivar':'Activar'}</button><button class="text-action" data-action="regen-coordinator" data-id="${escapeHTML(c.id)}">Regenerar código</button></div></article>`).join(''):`<p class="muted">Aún no hay accesos de coordinación.</p>`;}catch(e){box.innerHTML=`<p class="muted">${escapeHTML(e.message)}</p>`;}
+}
+$("#showNewCoordinatorBtn")?.addEventListener('click',()=>{$("#coordinatorListPanel").hidden=true;$("#coordinatorCreatePanel").hidden=false;$("#coordinatorName")?.focus();});
+$("#cancelNewCoordinatorBtn")?.addEventListener('click',()=>{$("#coordinatorCreatePanel").hidden=true;$("#coordinatorListPanel").hidden=false;});
+$("#createCoordinatorBtn")?.addEventListener('click',async()=>{try{const d=await api('/api/admin/coordinators/create',{method:'POST',body:JSON.stringify({full_name:$("#coordinatorName").value,email:$("#coordinatorEmail").value,school_name:$("#coordinatorSchool").value})});$("#coordinatorCreateResult").hidden=false;$("#coordinatorCreateResult").innerHTML=`<span>CÓDIGO COORDINACIÓN</span><strong>${escapeHTML(d.access_code)}</strong><small>Entrar en /coordinacion.html. Este rol no tiene acceso a tu práctica privada ni a IA.</small>`;$("#coordinatorAdminStatus").style.color='#86EFAC';$("#coordinatorAdminStatus").textContent='Acceso creado.';await loadCoordinators();}catch(e){$("#coordinatorAdminStatus").style.color='#FDA4AF';$("#coordinatorAdminStatus").textContent=e.message;}});
+
+let transferPersonId='';
+async function openTeacherTransfer(personId,personName=''){
+  transferPersonId=personId; const status=$("#teacherTransferStatus");status.textContent='Cargando continuidad…';
+  try{const d=await api(`/api/admin/teacher-transfer/preview?person_id=${encodeURIComponent(personId)}`);$("#transferStudentName").textContent=personName||'Alumno';$("#transferCurrentTeacher").textContent=d.current_teacher?.full_name||'Sin asignar';$("#transferPeriod").textContent=d.enrollment?.school_year||'—';$("#transferToTeacher").innerHTML=`<option value="">Selecciona docente</option>${(d.teachers||[]).map(t=>`<option value="${escapeHTML(t.id)}">${escapeHTML(t.full_name)}</option>`).join('')}`;const c=d.continuity||{};$("#transferContinuityPreview").innerHTML=c.approved_at?`<div class="transfer-ready"><span class="eyebrow">CONTINUIDAD QUE RECIBIRÁ EL NUEVO DOCENTE</span><div class="transfer-preview-grid"><article><b>Fortalezas</b><p>${escapeHTML(c.strengths||'—')}</p></article><article><b>Apoyos</b><p>${escapeHTML(c.support_needs||'—')}</p></article><article><b>Estrategias</b><p>${escapeHTML(c.strategies||'—')}</p></article><article><b>A observar</b><p>${escapeHTML(c.watch_items||'—')}</p></article></div></div>`:`<div class="review-needed-note">Aún no hay un informe de continuidad publicado. Puedes asignar al nuevo maestro, pero no recibirá un resumen de continuidad hasta que Alex publique uno.</div>`;const last=d.latest_transfer;const canUndo=last?.id && (Date.now()-Date.parse(last.created_at)<24*60*60*1000);$("#undoLastTransferBtn").hidden=!canUndo;$("#undoLastTransferBtn").dataset.id=canUndo?last.id:'';$("#transferNote").value='';status.textContent='';modalState('#teacherTransferModal',true);}catch(e){adminToast(e.message,'error');}
+}
+$("#confirmTeacherTransferBtn")?.addEventListener('click',async()=>{const to=$("#transferToTeacher").value;if(!transferPersonId||!to)return;const btn=$("#confirmTeacherTransferBtn");btn.disabled=true;try{const d=await api('/api/admin/teacher-transfer',{method:'POST',body:JSON.stringify({person_id:transferPersonId,to_teacher_id:to,transfer_note:$("#transferNote").value})});$("#teacherTransferStatus").style.color='#86EFAC';$("#teacherTransferStatus").textContent=`${d.from_teacher||'Sin maestro'} → ${d.to_teacher}. Transferencia lista.`;await Promise.all([loadCidebStudents(cidebDirectoryPage),loadTeachers(),loadAudit()]);setTimeout(()=>{modalState('#teacherTransferModal',false);openCidebStudent(transferPersonId);},700);}catch(e){$("#teacherTransferStatus").style.color='#FDA4AF';$("#teacherTransferStatus").textContent=e.message;}finally{btn.disabled=false;}});
+$("#undoLastTransferBtn")?.addEventListener('click',async e=>{const id=e.currentTarget.dataset.id;if(!id||!confirm('¿Deshacer la última transferencia? Solo es posible si el nuevo docente aún no registró información.'))return;try{await api('/api/admin/teacher-transfer/undo',{method:'POST',body:JSON.stringify({transfer_id:id})});$("#teacherTransferStatus").style.color='#86EFAC';$("#teacherTransferStatus").textContent='Transferencia deshecha.';await Promise.all([loadCidebStudents(cidebDirectoryPage),loadTeachers(),loadAudit()]);setTimeout(()=>{modalState('#teacherTransferModal',false);openCidebStudent(transferPersonId);},500);}catch(err){$("#teacherTransferStatus").style.color='#FDA4AF';$("#teacherTransferStatus").textContent=err.message;}});
+$$('[data-close-teacher-transfer]').forEach(x=>x.addEventListener('click',()=>modalState('#teacherTransferModal',false)));
 
 function obsCard(o,type){const isTeacher=type==="teacher";const audience=isTeacher?"docente":"familia";return `<article class="review-card ${o.status}"><div class="review-meta"><span>${isTeacher?"DOCENTE":"FAMILIA"} · ${escapeHTML(isTeacher?o.teacher_name:o.guardian_name)}</span><span>${escapeHTML(o.observation_date)}</span></div><strong>${escapeHTML(o.person_name)}</strong><p>${escapeHTML(isTeacher?o.description:o.observation_text)}</p>${isTeacher&&o.strategy_used?`<small>Estrategia: ${escapeHTML(o.strategy_used)}</small>`:""}<div class="review-privacy-fields"><label><span>NOTA INTERNA · SOLO ALEX</span><textarea id="private_${o.id}" rows="2" placeholder="Esta nota nunca se muestra al ${audience}.">${escapeHTML(o.private_note||"")}</textarea></label><label><span>RESPUESTA COMPARTIDA · VISIBLE PARA ${audience.toUpperCase()}</span><textarea id="comment_${o.id}" rows="2" placeholder="Opcional. Solo escribe aquí lo que sí puede leer el ${audience}.">${escapeHTML(o.professional_comment||"")}</textarea></label></div><button class="secondary-btn" data-action="review-observation" data-type="${type}" data-id="${escapeHTML(o.id)}">${o.status==="reviewed"?"GUARDAR CAMBIOS":"MARCAR REVISADO"}</button></article>`;}
 async function loadModuleObservations(){try{const [t,f]=await Promise.all([api("/api/admin/teacher-observations"),api("/api/admin/family-observations")]);$("#adminTeacherObservations").innerHTML=t.observations.length?t.observations.map(o=>obsCard(o,"teacher")).join(""):`<p class="muted">Sin observaciones docentes.</p>`;$("#adminFamilyObservations").innerHTML=f.observations.length?f.observations.map(o=>obsCard(o,"family")).join(""):`<p class="muted">Sin observaciones familiares.</p>`;}catch{}}
 window.reviewObservation=async(type,id)=>{try{await api(type==="teacher"?"/api/admin/teacher-observations/review":"/api/admin/family-observations/review",{method:"POST",body:JSON.stringify({id,private_note:$("#private_"+id).value,professional_comment:$("#comment_"+id).value})});await Promise.all([loadModuleObservations(),loadAudit()]);}catch(e){adminToast(e.message,'error');}};
+
+
+const professionalObservationAreas = [
+  ['attention_support','Atención'],
+  ['instructions_support','Seguimiento de instrucciones'],
+  ['organization_support','Organización'],
+  ['peer_support','Interacción con pares'],
+  ['frustration_support','Manejo de frustración'],
+  ['transitions_support','Cambios / transiciones'],
+  ['autonomy_support','Autonomía'],
+  ['help_seeking_support','Solicitud de ayuda']
+];
+
+function professionalRatingFields(){
+  return professionalObservationAreas.map(([key,label])=>`<label>${label}<select id="pro_rate_${key}"><option value="">No registrar esta área</option><option value="0">Sin necesidad de apoyo observada</option><option value="1">Apoyo ocasional</option><option value="2">Apoyo moderado</option><option value="3">Apoyo frecuente</option></select></label>`).join('');
+}
+if ($('#professionalRatings')) $('#professionalRatings').innerHTML = professionalRatingFields();
+
+function professionalObservationCard(o){
+  const visible = Number(o.visible_to_teachers) === 1;
+  return `<article class="professional-observation-card ${visible?'published':''}">
+    <div class="review-meta"><span>${visible?'VISIBLE PARA DOCENTES':'PRIVADO · SOLO ALEX'}</span><span>${escapeHTML(o.observation_date||'')}</span></div>
+    <strong>${escapeHTML(o.context||o.subject||'Observación profesional')}</strong>
+    <p>${escapeHTML(o.description||'')}</p>
+    ${o.strategy_used?`<small><b>Estrategia:</b> ${escapeHTML(o.strategy_used)}</small>`:''}
+    ${o.recommendation_text?`<small><b>Recomendación:</b> ${escapeHTML(o.recommendation_text)}</small>`:''}
+    <div class="row-actions professional-row-actions">
+      <button class="secondary-btn small" data-action="toggle-professional-observation" data-id="${escapeHTML(o.id)}" data-visible="${visible?'1':'0'}">${visible?'OCULTAR A DOCENTES':'PUBLICAR A DOCENTES'}</button>
+      <button class="text-action danger-text" data-action="delete-professional-observation" data-id="${escapeHTML(o.id)}">Eliminar</button>
+    </div>
+  </article>`;
+}
+
+async function loadProfessionalObservations(){
+  const personId = $('#professionalObservationStudent')?.value;
+  const box = $('#adminProfessionalObservations');
+  if (!box) return;
+  if (!personId) { box.innerHTML='<p class="muted">Selecciona un alumno.</p>'; return; }
+  try{
+    const d=await api(`/api/admin/professional-school-observations?person_id=${encodeURIComponent(personId)}`);
+    box.innerHTML=d.observations?.length?d.observations.map(professionalObservationCard).join(''):'<p class="muted">Aún no has registrado observaciones profesionales para este alumno.</p>';
+  }catch(e){box.innerHTML=`<p class="muted">${escapeHTML(e.message)}</p>`;}
+}
+$('#professionalObservationStudent')?.addEventListener('change',loadProfessionalObservations);
+
+$('#saveProfessionalObservation')?.addEventListener('click',async()=>{
+  const personId=$('#professionalObservationStudent').value;
+  const status=$('#professionalObsStatus');
+  if(!personId){status.textContent='Selecciona un alumno.';return;}
+  const payload={
+    person_id:personId,
+    observation_date:$('#pObsDate').value,
+    subject:$('#pObsSubject').value,
+    context:$('#pObsContext').value,
+    description:$('#pObsDescription').value,
+    strategy_used:$('#pObsStrategy').value,
+    recommendation_text:$('#pObsRecommendation').value,
+    visible_to_teachers:$('#pObsPublish').checked
+  };
+  professionalObservationAreas.forEach(([key])=>{const value=$(`#pro_rate_${key}`).value;if(value!=='')payload[key]=value;});
+  const btn=$('#saveProfessionalObservation'); const original=btn.textContent; btn.disabled=true; btn.textContent='GUARDANDO…';
+  try{
+    const d=await api('/api/admin/professional-school-observations',{method:'POST',body:JSON.stringify(payload)});
+    status.style.color='#86EFAC';
+    status.textContent=d.published?'Observación guardada y publicada para docentes.':'Observación guardada como privada.';
+    $('#pObsDescription').value='';$('#pObsStrategy').value='';$('#pObsRecommendation').value='';$('#pObsPublish').checked=false;
+    professionalObservationAreas.forEach(([key])=>{$(`#pro_rate_${key}`).value='';});
+    await Promise.all([loadProfessionalObservations(),loadModuleObservations(),loadAudit()]);
+    if($('#continuityPerson')?.value===personId){
+      const fresh=await api(`/api/admin/school-continuity?person_id=${encodeURIComponent(personId)}`);
+      currentContinuityData=fresh;$('#adminSchoolSnapshot').innerHTML=renderAdminSnapshot(fresh.snapshot);renderTeacherReportPreview(fresh,true);
+    }
+  }catch(e){status.style.color='#FDA4AF';status.textContent=e.message;}finally{btn.disabled=false;btn.textContent=original;}
+});
+
+async function toggleProfessionalObservation(id,currentlyVisible){
+  const personId=$('#professionalObservationStudent').value;
+  try{
+    await api('/api/admin/professional-school-observations/visibility',{method:'POST',body:JSON.stringify({id,visible:!currentlyVisible})});
+    await Promise.all([loadProfessionalObservations(),loadAudit()]);
+    if($('#continuityPerson')?.value===personId){const fresh=await api(`/api/admin/school-continuity?person_id=${encodeURIComponent(personId)}`);currentContinuityData=fresh;$('#adminSchoolSnapshot').innerHTML=renderAdminSnapshot(fresh.snapshot);renderTeacherReportPreview(fresh,true);}
+  }catch(e){adminToast(e.message,'error');}
+}
+async function deleteProfessionalObservation(id){
+  if(!confirm('¿Eliminar esta observación profesional? Esta acción no se puede deshacer.'))return;
+  const personId=$('#professionalObservationStudent').value;
+  try{
+    await api('/api/admin/professional-school-observations/delete',{method:'POST',body:JSON.stringify({id})});
+    await Promise.all([loadProfessionalObservations(),loadAudit()]);
+    if($('#continuityPerson')?.value===personId){const fresh=await api(`/api/admin/school-continuity?person_id=${encodeURIComponent(personId)}`);currentContinuityData=fresh;$('#adminSchoolSnapshot').innerHTML=renderAdminSnapshot(fresh.snapshot);renderTeacherReportPreview(fresh,true);}
+  }catch(e){adminToast(e.message,'error');}
+}
 
 const schoolAreaLabels = {
   attention: "Atención",
@@ -1580,26 +1708,60 @@ let currentContinuityData = null;
 
 function topSupportArea(snapshot) {
   const entries = Object.entries(snapshot?.distribution || {}).filter(([,d]) => Number(d?.n || 0) >= 3 && d.higher_support_pct != null);
-  if (!entries.length) return { label: "Sin datos", value: null, n: 0 };
+  if (!entries.length) return { label: "Aún sin tendencia", value: null, n: 0 };
   entries.sort((a,b) => Number(b[1].higher_support_pct) - Number(a[1].higher_support_pct));
   return { label: schoolAreaLabels[entries[0][0]] || entries[0][0], value: Number(entries[0][1].higher_support_pct), n:Number(entries[0][1].n||0) };
 }
 function supportFrequencyText(dist) {
   const n=Number(dist?.n||0);
-  if (!n) return "Sin datos";
-  if (n < 3) return `Datos iniciales · n=${n}`;
+  if (!n) return "Sin registros";
+  if (n < 3) return `${n} registro${n===1?"":"s"} · evidencia inicial`;
   const pct=Number(dist.higher_support_pct||0);
-  if (pct < 25) return "Pocas veces se registró apoyo moderado/frecuente";
-  if (pct < 60) return "En parte de los registros se observó apoyo moderado/frecuente";
-  return "En la mayoría de registros se observó apoyo moderado/frecuente";
+  if (pct < 25) return "Poca frecuencia de apoyo moderado/frecuente";
+  if (pct < 60) return "Frecuencia intermedia de apoyo moderado/frecuente";
+  return "Frecuencia alta de apoyo moderado/frecuente";
+}
+function observedAreaEntries(snapshot) {
+  return Object.entries(schoolAreaLabels)
+    .map(([key,label]) => ({ key, label, data:snapshot?.distribution?.[key] || {} }))
+    .filter(item => Number(item.data?.n || 0) > 0);
+}
+function renderInitialAreaChips(snapshot, compact=false) {
+  const items = observedAreaEntries(snapshot);
+  if (!items.length) return `<p class="muted">Todavía no hay áreas observadas registradas.</p>`;
+  return `<div class="initial-evidence-note"><strong>Datos iniciales</strong><span>Hay pocos registros para mostrar una tendencia confiable. Por ahora se muestran únicamente las áreas que ya fueron observadas.</span></div><div class="observed-area-chips ${compact?"compact":""}">${items.map(item=>`<span><b>${escapeHTML(item.label)}</b><small>${Number(item.data.n)} registro${Number(item.data.n)===1?"":"s"}</small></span>`).join("")}</div>`;
+}
+function renderSupportBars(snapshot, compact=false) {
+  const stable = observedAreaEntries(snapshot).filter(item => Number(item.data?.n || 0) >= 3);
+  const initial = observedAreaEntries(snapshot).filter(item => Number(item.data?.n || 0) < 3);
+  if (!stable.length) return renderInitialAreaChips(snapshot, compact);
+  const rows = stable.map(item => {
+    const pct = Number(item.data.higher_support_pct || 0);
+    return `<div class="${compact?"preview-support-row":"support-row enhanced"}"><div><strong>${escapeHTML(item.label)}</strong><small>${supportFrequencyText(item.data)}</small></div><div class="${compact?"preview-bar":"support-track"}"><i style="width:${pct}%"></i></div><b>${pct}%</b></div>`;
+  }).join("");
+  const initialBlock = initial.length ? `<div class="initial-evidence-secondary"><small>Áreas con evidencia todavía inicial</small><div class="observed-area-chips compact">${initial.map(item=>`<span><b>${escapeHTML(item.label)}</b><small>${Number(item.data.n)} registro${Number(item.data.n)===1?"":"s"}</small></span>`).join("")}</div></div>` : "";
+  return rows + initialBlock;
+}
+function renderContextSummary(snapshot, compact=false) {
+  const contexts = snapshot?.contexts || [];
+  if (!contexts.length) return `<p class="muted">Aún no hay contextos registrados.</p>`;
+  const total = contexts.reduce((sum,x)=>sum+Number(x.count||0),0);
+  if (total < 3) {
+    return `<div class="initial-evidence-note slim"><strong>Contexto inicial</strong><span>Aún no hay suficientes registros para comparar contextos.</span></div><div class="context-count-chips">${contexts.slice(0,5).map(x=>`<span><b>${escapeHTML(x.context)}</b><small>${Number(x.count)} registro${Number(x.count)===1?"":"s"}</small></span>`).join("")}</div>`;
+  }
+  const max=Math.max(1,...contexts.map(x=>Number(x.count)));
+  return contexts.slice(0,5).map(x=> compact
+    ? `<div class="preview-context-row"><span>${escapeHTML(x.context)}</span><div><i style="width:${Number(x.count)/max*100}%"></i></div><b>${x.count}</b></div>`
+    : `<div class="context-visual-row"><div><strong>${escapeHTML(x.context)}</strong><small>${x.count} registro${Number(x.count)===1?"":"s"}</small></div><div class="context-track"><i style="width:${Number(x.count)/max*100}%"></i></div></div>`
+  ).join("");
 }
 
 function renderAdminSnapshot(s) {
   if (!s || !s.observation_count) {
-    return `<div class="empty-visual"><strong>Aún no hay observaciones suficientes</strong><span>Las gráficas aparecerán conforme existan registros docentes revisados.</span></div>`;
+    return `<div class="empty-visual"><strong>Aún no hay observaciones suficientes</strong><span>Las gráficas aparecerán conforme existan registros docentes revisados o registros profesionales publicados.</span></div>`;
   }
   const top = topSupportArea(s);
-  return `<div class="mini-snapshot-grid"><article><span>Registros</span><strong>${s.observation_count}</strong></article><article><span>Área con más apoyo registrado</span><strong>${escapeHTML(top.label)}</strong></article><article><span>Último registro</span><strong>${s.last_reviewed_at ? new Date(s.last_reviewed_at).toLocaleDateString() : "—"}</strong></article></div>`;
+  return `<div class="mini-snapshot-grid"><article><span>Registros considerados</span><strong>${s.observation_count}</strong><small>${Number(s.teacher_count||0)} docentes · ${Number(s.professional_count||0)} profesional</small></article><article><span>Área con más apoyo registrado</span><strong>${escapeHTML(top.label)}</strong></article><article><span>Último registro</span><strong>${s.last_reviewed_at ? new Date(s.last_reviewed_at).toLocaleDateString() : "—"}</strong></article></div>`;
 }
 
 function continuityFields() {
@@ -1625,16 +1787,8 @@ function renderTeacherReportPreview(data, useCurrentFields = false) {
   const top = topSupportArea(s);
   const topContext = (s.contexts || [])[0];
 
-  const bars = Object.entries(schoolAreaLabels).map(([key,label]) => {
-    const d = s.distribution?.[key];
-    const pct = d?.higher_support_pct == null ? 0 : Number(d.higher_support_pct);
-    return `<div class="preview-support-row"><div><strong>${label}</strong><small>${supportFrequencyText(d)}</small></div><div class="preview-bar"><i style="width:${pct}%"></i></div><b>${d?.n ? `n=${d.n}` : "—"}</b></div>`;
-  }).join("");
-
-  const contexts = (s.contexts || []).length ? (() => {
-    const max = Math.max(1, ...(s.contexts || []).map(x => Number(x.count)));
-    return s.contexts.slice(0,5).map(x => `<div class="preview-context-row"><span>${escapeHTML(x.context)}</span><div><i style="width:${Number(x.count)/max*100}%"></i></div><b>${x.count}</b></div>`).join("");
-  })() : `<p class="muted">Aún no hay contextos registrados.</p>`;
+  const bars = renderSupportBars(s, true);
+  const contexts = renderContextSummary(s, true);
 
   const sections = [
     ["Descripción general", c.general_description],
@@ -1651,11 +1805,11 @@ function renderTeacherReportPreview(data, useCurrentFields = false) {
       <span>${$("#contApprove").checked ? "PUBLICADO" : "BORRADOR"}</span>
     </div>
     <div class="preview-kpis">
-      <article><span>Observaciones</span><strong>${s.observation_count || 0}</strong></article>
-      <article><span>Mayor apoyo observado</span><strong>${escapeHTML(top.label)}</strong></article>
+      <article><span>Registros considerados</span><strong>${s.observation_count || 0}</strong><small>${Number(s.teacher_count||0)} docentes · ${Number(s.professional_count||0)} profesional</small></article>
+      <article><span>Tendencia por área</span><strong>${escapeHTML(top.label)}</strong></article>
       <article><span>Contexto más registrado</span><strong>${escapeHTML(topContext?.context || "—")}</strong></article>
     </div>
-    <section class="preview-chart-card"><h4>Frecuencia de apoyo observado <small>moderado/frecuente · sin puntaje psicológico</small></h4>${bars}</section>
+    <section class="preview-chart-card"><h4>Áreas observadas <small>solo se muestran tendencias con ≥3 registros por área</small></h4>${bars}</section>
     <section class="preview-chart-card"><h4>Contextos registrados</h4>${contexts}</section>
     <div class="preview-text-grid">${sections}</div>
     <div class="preview-disclaimer">Información descriptiva para continuidad escolar. No constituye diagnóstico ni evaluación clínica.</div>
@@ -1759,10 +1913,10 @@ async function loadAudit(){try{const d=await api("/api/admin/audit");$("#auditLi
 $("#refreshAuditBtn").addEventListener("click",loadAudit);
 
 
-async function loadInstitutionPreview(){try{const d=await api("/api/admin/institution/preview?institution=CIDEB");const cards=`<article><span>Expedientes relacionados</span><strong>${d.people}</strong></article><article><span>Solo escolares</span><strong>${d.school_only}</strong></article><article><span>Terapia privada preservada</span><strong>${d.private_therapy_preserved}</strong></article><article><span>Docentes activos</span><strong>${d.active_teachers}</strong></article><article><span>Asignaciones activas</span><strong>${d.teacher_assignments}</strong></article><article><span>Observaciones docentes</span><strong>${d.teacher_observations}</strong></article><article><span>Fichas de continuidad</span><strong>${d.continuity_records}</strong></article><article><span>Accesos familiares</span><strong>${d.family_accesses}</strong></article>`;if($("#institutionPreview"))$("#institutionPreview").innerHTML=cards;if($("#cidebOverviewStats"))$("#cidebOverviewStats").innerHTML=`<article><span>Alumnos activos</span><strong>${d.people}</strong></article><article><span>Docentes activos</span><strong>${d.active_teachers}</strong></article><article><span>Informes publicados</span><strong>${d.continuity_records}</strong></article>`;}catch(e){if($("#institutionPreview"))$("#institutionPreview").innerHTML=`<p class="muted">${escapeHTML(e.message)}</p>`;}}
+async function loadInstitutionPreview(){try{const d=await api("/api/admin/institution/preview?institution=CIDEB");const cards=`<article><span>Expedientes relacionados</span><strong>${d.people}</strong></article><article><span>Solo escolares</span><strong>${d.school_only}</strong></article><article><span>Terapia privada preservada</span><strong>${d.private_therapy_preserved}</strong></article><article><span>Docentes activos</span><strong>${d.active_teachers}</strong></article><article><span>Coordinación activa</span><strong>${d.active_coordinators||0}</strong></article><article><span>Asignaciones activas</span><strong>${d.teacher_assignments}</strong></article><article><span>Observaciones docentes</span><strong>${d.teacher_observations}</strong></article><article><span>Fichas de continuidad</span><strong>${d.continuity_records}</strong></article><article><span>Accesos familiares</span><strong>${d.family_accesses}</strong></article>`;if($("#institutionPreview"))$("#institutionPreview").innerHTML=cards;if($("#cidebOverviewStats"))$("#cidebOverviewStats").innerHTML=`<article><span>Alumnos activos</span><strong>${d.people}</strong></article><article><span>Docentes activos</span><strong>${d.active_teachers}</strong></article><article><span>Informes publicados</span><strong>${d.continuity_records}</strong></article>`;}catch(e){if($("#institutionPreview"))$("#institutionPreview").innerHTML=`<p class="muted">${escapeHTML(e.message)}</p>`;}}
 $("#refreshInstitutionPreviewBtn").addEventListener("click",loadInstitutionPreview);
-$("#closeInstitutionBtn").addEventListener("click",async()=>{if(!confirm("Esto desactivará accesos CIDEB y archivará expedientes exclusivamente escolares. Los procesos terapéuticos privados se conservarán. ¿Continuar?"))return;try{const d=await api("/api/admin/institution/close",{method:"POST",body:JSON.stringify({institution:"CIDEB",mode:"archive"})});$("#institutionStatus").style.color="#86EFAC";$("#institutionStatus").textContent=d.message;await Promise.all([loadInstitutionPreview(),loadPeople(),loadTeachers(),loadModuleObservations(),loadAudit()]);}catch(e){$("#institutionStatus").style.color="#FDA4AF";$("#institutionStatus").textContent=e.message;}});
-$("#deleteInstitutionBtn").addEventListener("click",async()=>{const confirmation=$("#institutionDeleteConfirmation").value.trim();if(confirmation.toLocaleUpperCase("es-MX")!=="CERRAR CIDEB Y ELIMINAR"){$("#institutionStatus").style.color="#FDA4AF";$("#institutionStatus").textContent="Escribe exactamente: CERRAR CIDEB Y ELIMINAR";return;}if(!confirm("ÚLTIMA CONFIRMACIÓN: se eliminarán datos escolares CIDEB y expedientes exclusivamente escolares. Esta acción no puede deshacerse. ¿Continuar?"))return;try{const d=await api("/api/admin/institution/close",{method:"POST",body:JSON.stringify({institution:"CIDEB",mode:"delete",confirmation})});$("#institutionDeleteConfirmation").value="";$("#institutionStatus").style.color="#86EFAC";$("#institutionStatus").textContent=d.message;await Promise.all([loadInstitutionPreview(),loadPeople(),loadTeachers(),loadModuleObservations(),loadAudit(),loadDashboard()]);}catch(e){$("#institutionStatus").style.color="#FDA4AF";$("#institutionStatus").textContent=e.message;}});
+$("#closeInstitutionBtn").addEventListener("click",async()=>{if(!confirm("Esto desactivará accesos CIDEB y archivará expedientes exclusivamente escolares. Los procesos terapéuticos privados se conservarán. ¿Continuar?"))return;try{const d=await api("/api/admin/institution/close",{method:"POST",body:JSON.stringify({institution:"CIDEB",mode:"archive"})});$("#institutionStatus").style.color="#86EFAC";$("#institutionStatus").textContent=d.message;await Promise.all([loadInstitutionPreview(),loadPeople(),loadTeachers(),loadCoordinators(),loadModuleObservations(),loadAudit()]);}catch(e){$("#institutionStatus").style.color="#FDA4AF";$("#institutionStatus").textContent=e.message;}});
+$("#deleteInstitutionBtn").addEventListener("click",async()=>{const confirmation=$("#institutionDeleteConfirmation").value.trim();if(confirmation.toLocaleUpperCase("es-MX")!=="CERRAR CIDEB Y ELIMINAR"){$("#institutionStatus").style.color="#FDA4AF";$("#institutionStatus").textContent="Escribe exactamente: CERRAR CIDEB Y ELIMINAR";return;}if(!confirm("ÚLTIMA CONFIRMACIÓN: se eliminarán datos escolares CIDEB y expedientes exclusivamente escolares. Esta acción no puede deshacerse. ¿Continuar?"))return;try{const d=await api("/api/admin/institution/close",{method:"POST",body:JSON.stringify({institution:"CIDEB",mode:"delete",confirmation})});$("#institutionDeleteConfirmation").value="";$("#institutionStatus").style.color="#86EFAC";$("#institutionStatus").textContent=d.message;await Promise.all([loadInstitutionPreview(),loadPeople(),loadTeachers(),loadCoordinators(),loadModuleObservations(),loadAudit(),loadDashboard()]);}catch(e){$("#institutionStatus").style.color="#FDA4AF";$("#institutionStatus").textContent=e.message;}});
 
 document.addEventListener('click', async event => {
   const button=event.target.closest('[data-action]'); if(!button)return;
@@ -1781,6 +1935,9 @@ document.addEventListener('click', async event => {
   if(action==='open-person') return openPerson(id);
   if(action==='review-observation') return reviewObservation(button.dataset.type,id);
   if(action==='manage-teacher') return manageTeacher(id);
+  if(action==='open-teacher-transfer') return openTeacherTransfer(id,button.dataset.name||'');
+  if(action==='toggle-coordinator'){await api('/api/admin/coordinators/access',{method:'POST',body:JSON.stringify({coordinator_id:id,active:button.dataset.active!=="1"})});return loadCoordinators();}
+  if(action==='regen-coordinator'){if(!confirm('El código anterior dejará de funcionar y coordinación deberá aceptar nuevamente el acuerdo. ¿Continuar?'))return;const d=await api('/api/admin/coordinators/regenerate',{method:'POST',body:JSON.stringify({coordinator_id:id})});adminToast(`Nuevo código de coordinación: ${d.access_code}`,'info');return loadCoordinators();}
   if(action==='unassign-teacher'){if(!currentManagedTeacherId)return;await api('/api/admin/teachers/unassign',{method:'POST',body:JSON.stringify({teacher_id:currentManagedTeacherId,person_id:button.dataset.personId,school_year:button.dataset.year})});return Promise.all([manageTeacher(currentManagedTeacherId),loadTeachers()]);}
   if(action==='toggle-family'){await api('/api/admin/family/access/update',{method:'POST',body:JSON.stringify({guardian_id:id,active:button.dataset.active!=="1"})});return loadFamilyData();}
   if(action==='regen-family'){if(!confirm('El código anterior dejará de funcionar y deberá aceptar nuevamente el aviso. ¿Continuar?'))return;const d=await api('/api/admin/family/access/regenerate',{method:'POST',body:JSON.stringify({guardian_id:id})});$("#familyManageResult").hidden=false;$("#familyManageResult").innerHTML=`<span>NUEVO CÓDIGO FAMILIAR</span><strong>${escapeHTML(d.access_code)}</strong><small>El código anterior quedó invalidado.</small>`;return loadFamilyData();}
