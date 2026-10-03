@@ -840,7 +840,7 @@ async function ensureSchoolModuleTables(env) {
     `CREATE TABLE IF NOT EXISTS teachers (id TEXT PRIMARY KEY, full_name TEXT NOT NULL, email TEXT, school_name TEXT, access_hash TEXT NOT NULL, access_hint TEXT, active INTEGER NOT NULL DEFAULT 1, agreement_version TEXT NOT NULL DEFAULT '1.0', agreement_accepted_at TEXT, agreement_signed_name TEXT, last_login_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS coordinators (id TEXT PRIMARY KEY, full_name TEXT NOT NULL, email TEXT, school_name TEXT NOT NULL DEFAULT 'CIDEB', access_hash TEXT NOT NULL, access_hint TEXT, active INTEGER NOT NULL DEFAULT 1, agreement_version TEXT NOT NULL DEFAULT '1.0', agreement_accepted_at TEXT, agreement_signed_name TEXT, last_login_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS teacher_assignments (teacher_id TEXT NOT NULL, person_id TEXT NOT NULL, school_year TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, PRIMARY KEY(teacher_id, person_id, school_year), FOREIGN KEY(teacher_id) REFERENCES teachers(id) ON DELETE CASCADE, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
-    `CREATE TABLE IF NOT EXISTS teacher_observations (id TEXT PRIMARY KEY, teacher_id TEXT NOT NULL, person_id TEXT NOT NULL, observation_date TEXT NOT NULL, subject TEXT, context TEXT, attention_support INTEGER, instructions_support INTEGER, organization_support INTEGER, peer_support INTEGER, frustration_support INTEGER, transitions_support INTEGER, autonomy_support INTEGER, help_seeking_support INTEGER, description TEXT NOT NULL, antecedent TEXT, strategy_used TEXT, result_text TEXT, additional_comments TEXT, status TEXT NOT NULL DEFAULT 'submitted', private_note TEXT, professional_comment TEXT, reviewed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(teacher_id) REFERENCES teachers(id) ON DELETE CASCADE, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
+    `CREATE TABLE IF NOT EXISTS teacher_observations (id TEXT PRIMARY KEY, teacher_id TEXT NOT NULL, person_id TEXT NOT NULL, observation_date TEXT NOT NULL, subject TEXT, context TEXT, attention_support INTEGER, instructions_support INTEGER, organization_support INTEGER, peer_support INTEGER, frustration_support INTEGER, transitions_support INTEGER, autonomy_support INTEGER, help_seeking_support INTEGER, description TEXT NOT NULL, antecedent TEXT, strategy_used TEXT, result_text TEXT, additional_comments TEXT, status TEXT NOT NULL DEFAULT 'submitted', included_in_record INTEGER NOT NULL DEFAULT 0, private_note TEXT, professional_comment TEXT, reviewed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(teacher_id) REFERENCES teachers(id) ON DELETE CASCADE, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
     `CREATE TABLE IF NOT EXISTS professional_school_observations (id TEXT PRIMARY KEY, person_id TEXT NOT NULL, observation_date TEXT NOT NULL, subject TEXT, context TEXT, attention_support INTEGER, instructions_support INTEGER, organization_support INTEGER, peer_support INTEGER, frustration_support INTEGER, transitions_support INTEGER, autonomy_support INTEGER, help_seeking_support INTEGER, description TEXT NOT NULL, strategy_used TEXT, recommendation_text TEXT, visible_to_teachers INTEGER NOT NULL DEFAULT 0, published_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
     `CREATE TABLE IF NOT EXISTS school_continuity (person_id TEXT PRIMARY KEY, general_description TEXT, strengths TEXT, support_needs TEXT, strategies TEXT, watch_items TEXT, approved_at TEXT, updated_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
     `CREATE TABLE IF NOT EXISTS guardians (id TEXT PRIMARY KEY, person_id TEXT NOT NULL, full_name TEXT NOT NULL, relationship TEXT, email TEXT, access_hash TEXT NOT NULL, access_hint TEXT, active INTEGER NOT NULL DEFAULT 1, agreement_version TEXT NOT NULL DEFAULT '1.0', agreement_accepted_at TEXT, agreement_signed_name TEXT, last_login_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
@@ -854,6 +854,7 @@ async function ensureSchoolModuleTables(env) {
   for (const sql of statements) await env.DB.prepare(sql).run();
   // Notas internas separadas de cualquier respuesta visible para docentes o familias.
   await ensureColumn(env, "teacher_observations", "private_note", "TEXT");
+  await ensureColumn(env, "teacher_observations", "included_in_record", "INTEGER NOT NULL DEFAULT 0");
   await ensureColumn(env, "family_observations", "private_note", "TEXT");
 }
 
@@ -1167,10 +1168,10 @@ async function getSchoolSnapshot(env, personId, reviewedOnly = true) {
     help_seeking: 'help_seeking_support'
   };
 
-  // The teacher-facing visual summary combines only information that has
-  // already passed human review: teacher records marked reviewed and
-  // professional observations that Alex explicitly published.
-  const teacherFilter = reviewedOnly ? "status='reviewed'" : "1=1";
+  // The teacher-facing visual summary uses only information Alex explicitly
+  // authorized for the record. Teacher comments remain supplementary unless
+  // Alex marks them for inclusion; professional observations remain primary.
+  const teacherFilter = reviewedOnly ? "status='reviewed' AND included_in_record=1" : "included_in_record=1";
   const proFilter = reviewedOnly ? "visible_to_teachers=1" : "1=1";
   const combined = `
     WITH combined AS (
@@ -1796,7 +1797,7 @@ Nunca tienes acceso a las notas privadas de Alex.
     const personId = safeText(b.person_id,120);
     if (!(await teacherAssignment(env, session.actorId, personId))) return json({ error: "No tienes acceso a este alumno." }, 403);
     const description = safeText(b.description,5000);
-    if (!description) return json({ error: "Describe qué observaste." },400);
+    if (!description) return json({ error: "Escribe tu comentario." },400);
     const observationDate = safeText(b.observation_date,20) || nortiaLocalDate();
     if (!isValidDateOnly(observationDate)) return json({ error: "Selecciona una fecha válida para la observación." },400);
     if (observationDate > nortiaLocalDate()) return json({ error: "La fecha de observación no puede ser futura." },400);
@@ -1805,8 +1806,8 @@ Nunca tienes acceso a las notas privadas de Alex.
     await env.DB.prepare(`INSERT INTO teacher_observations (id,teacher_id,person_id,observation_date,subject,context,attention_support,instructions_support,organization_support,peer_support,frustration_support,transitions_support,autonomy_support,help_seeking_support,description,antecedent,strategy_used,result_text,additional_comments,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'submitted',?,?)`)
       .bind(id,session.actorId,personId,observationDate,safeText(b.subject,120),safeText(b.context,120),clamp(b.attention_support),clamp(b.instructions_support),clamp(b.organization_support),clamp(b.peer_support),clamp(b.frustration_support),clamp(b.transitions_support),clamp(b.autonomy_support),clamp(b.help_seeking_support),description,safeText(b.antecedent,3000),safeText(b.strategy_used,3000),safeText(b.result_text,3000),safeText(b.additional_comments,3000),now,now).run();
     const person = await env.DB.prepare(`SELECT full_name FROM people WHERE id=?`).bind(personId).first();
-    await logAudit(env,"teacher",session.actorId,"submit_observation",personId,"Registro docente enviado a revisión");
-    await createNotification(env,{type:"teacher_observation",personId,title:"Nueva observación docente",message:`${teacher.full_name} registró una observación de ${person?.full_name || "un alumno"}.`,priority:"normal",emailSubject:"NORTIA · Nueva observación docente",emailText:`${teacher.full_name} registró una nueva observación escolar para ${person?.full_name || "un alumno"}.\n\nIngresa al Panel Profesional para revisarla.`});
+    await logAudit(env,"teacher",session.actorId,"submit_observation",personId,"Comentario docente enviado a revisión");
+    await createNotification(env,{type:"teacher_observation",personId,title:"Nuevo comentario docente",message:`${teacher.full_name} envió un comentario sobre ${person?.full_name || "un alumno"}.`,priority:"normal",emailSubject:"NORTIA · Nuevo comentario docente",emailText:`${teacher.full_name} envió un comentario escolar para ${person?.full_name || "un alumno"}.\n\nIngresa al Panel Profesional para revisarlo y decidir si debe integrarse al expediente.`});
     return json({ok:true,id});
   }
 
@@ -2409,10 +2410,11 @@ Nunca tienes acceso a las notas privadas de Alex.
   }
 
   if (path === "/api/admin/teacher-observations/review" && req.method === "POST") {
-    await ensureSchoolModuleTables(env); const b=await parseBody(req),id=safeText(b.id,120); if(!id)return json({error:"Observación obligatoria."},400);
-    const row=await env.DB.prepare(`SELECT person_id FROM teacher_observations WHERE id=?`).bind(id).first(); if(!row)return json({error:"Observación no encontrada."},404);
-    await env.DB.prepare(`UPDATE teacher_observations SET status='reviewed',private_note=?,professional_comment=?,reviewed_at=?,updated_at=? WHERE id=?`).bind(safeText(b.private_note,5000),safeText(b.professional_comment,5000),nowISO(),nowISO(),id).run();
-    await logAudit(env,"admin","alex","review_teacher_observation",row.person_id,"Observación docente revisada"); return json({ok:true});
+    await ensureSchoolModuleTables(env); const b=await parseBody(req),id=safeText(b.id,120); if(!id)return json({error:"Comentario obligatorio."},400);
+    const row=await env.DB.prepare(`SELECT person_id FROM teacher_observations WHERE id=?`).bind(id).first(); if(!row)return json({error:"Comentario no encontrado."},404);
+    const included=b.included_in_record?1:0;
+    await env.DB.prepare(`UPDATE teacher_observations SET status='reviewed',included_in_record=?,private_note=?,professional_comment=?,reviewed_at=?,updated_at=? WHERE id=?`).bind(included,safeText(b.private_note,5000),safeText(b.professional_comment,5000),nowISO(),nowISO(),id).run();
+    await logAudit(env,"admin","alex","review_teacher_observation",row.person_id,included?"Comentario docente revisado e integrado al expediente.":"Comentario docente revisado como antecedente, sin integrarlo al expediente."); return json({ok:true,included_in_record:included});
   }
 
   if (path === "/api/admin/school-continuity/ai-draft" && req.method === "POST") {
@@ -2436,7 +2438,7 @@ Nunca tienes acceso a las notas privadas de Alex.
           attention_support,instructions_support,organization_support,peer_support,frustration_support,
           transitions_support,autonomy_support,help_seeking_support
         FROM teacher_observations
-        WHERE person_id=? AND status='reviewed'
+        WHERE person_id=? AND status='reviewed' AND included_in_record=1
         ORDER BY observation_date DESC, COALESCE(reviewed_at,updated_at,created_at) DESC
         LIMIT 20
       `).bind(personId).all(),
@@ -2453,7 +2455,7 @@ Nunca tienes acceso a las notas privadas de Alex.
 
     if (!person) return json({ error: "Alumno no encontrado." }, 404);
     if (!Number(snapshot?.observation_count || 0)) {
-      return json({ error: "Necesitas al menos una observación revisada o una observación profesional publicada para generar el borrador." }, 400);
+      return json({ error: "Necesitas al menos una observación profesional publicada o un comentario docente que hayas decidido integrar al expediente." }, 400);
     }
 
     const evidenceCount = Number(snapshot.observation_count || 0);

@@ -474,13 +474,13 @@
     </section>
 
     <section class="admin-view" id="view-observations">
-      <div class="clean-page-head"><div><span class="eyebrow">CIDEB · OBSERVACIONES</span><h2>Bandeja de revisión</h2><p class="muted">Revisa un origen a la vez. Son registros descriptivos, no diagnósticos.</p></div></div>
+      <div class="clean-page-head"><div><span class="eyebrow">CIDEB · INFORMACIÓN ESCOLAR</span><h2>Bandeja de revisión</h2><p class="muted">Alex concentra la información. Los comentarios docentes son aportes complementarios y no forman parte del expediente hasta que tú decidas integrarlos.</p></div></div>
       <div class="segmented-tabs" id="observationSourceTabs" role="tablist" aria-label="Origen de observaciones">
         <button class="active" role="tab" aria-selected="true" aria-controls="teacherObservationPanel" data-observation-source="teacher">Docentes</button>
         <button role="tab" aria-selected="false" aria-controls="familyObservationPanel" data-observation-source="family">Familias</button>
         <button role="tab" aria-selected="false" aria-controls="professionalObservationPanel" data-observation-source="professional">Mis observaciones</button>
       </div>
-      <div class="panel observation-source-panel active" id="teacherObservationPanel" role="tabpanel"><div class="panel-head"><div><h3>Observaciones docentes</h3><p class="muted">Registros enviados por maestros y pendientes de tu revisión.</p></div></div><div id="adminTeacherObservations"></div></div>
+      <div class="panel observation-source-panel active" id="teacherObservationPanel" role="tabpanel"><div class="panel-head"><div><h3>Comentarios docentes</h3><p class="muted">Aportes enviados por maestros. Revísalos y decide caso por caso si deben integrarse al expediente.</p></div></div><div id="adminTeacherObservations"></div></div>
       <div class="panel observation-source-panel" id="familyObservationPanel" role="tabpanel" hidden><div class="panel-head"><div><h3>Observaciones familiares</h3><p class="muted">Registros enviados desde el Portal Familiar.</p></div></div><div id="adminFamilyObservations"></div></div>
       <div class="observation-source-panel" id="professionalObservationPanel" role="tabpanel" hidden>
         <div class="panel professional-observation-editor">
@@ -516,7 +516,7 @@
         <div class="panel clean-report-step">
           <span class="eyebrow">PASO 1</span>
           <h3>Revisa la información disponible</h3>
-          <p class="muted">Este resumen usa únicamente observaciones docentes revisadas y observaciones profesionales que tú decidiste publicar. Las notas privadas nunca se envían a la IA ni al docente.</p>
+          <p class="muted">Este resumen usa tus observaciones profesionales publicadas y únicamente los comentarios docentes que tú hayas marcado expresamente para integrar al expediente. Las notas privadas nunca se envían a la IA ni al docente.</p>
           <div id="adminSchoolSnapshot" class="snapshot-card compact-snapshot"></div>
           <div class="report-context-actions">
             <button class="secondary-btn" id="addObservationFromReportBtn">+ AGREGAR OBSERVACIÓN</button>

@@ -259,6 +259,7 @@ CREATE TABLE IF NOT EXISTS teacher_observations (
   result_text TEXT,
   additional_comments TEXT,
   status TEXT NOT NULL DEFAULT 'submitted',
+  included_in_record INTEGER NOT NULL DEFAULT 0,
   private_note TEXT,
   professional_comment TEXT,
   reviewed_at TEXT,
