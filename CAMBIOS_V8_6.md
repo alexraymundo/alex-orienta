@@ -57,3 +57,10 @@ Aplicar `migration-v8.6.sql` en D1 antes o junto con el despliegue. El Worker ta
 - El mapa distingue Fortaleza observada / En desarrollo / Requiere apoyo / Sin información suficiente sin presentar un score psicológico.
 - La evolución solo grafica áreas con al menos dos registros comparables; con un solo registro muestra Seguimiento inicial.
 - La vista previa de Alex refleja la nueva estructura.
+
+
+## Ajuste visual posterior (03-oct-2026 · Perfil integral)
+- Se sustituyó "Perfil visual del alumno" por **Perfil integral del alumno**.
+- Se reemplazó la sección de evolución por **Panorama general de observación** con gráfica tipo radar/telaraña.
+- Se ampliaron las áreas del perfil a 10 dimensiones escolares y socioemocionales: comprensión de instrucciones, atención y enfoque, participación, organización, autonomía, regulación emocional, motivación escolar, convivencia social, comunicación y expresión, y tolerancia a la frustración.
+- Se rediseñó la vista del docente y la vista previa de Alex para mostrar un mapa visual más rico y un radar descriptivo.

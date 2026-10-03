@@ -1890,14 +1890,82 @@ function continuityFields() {
   };
 }
 
-function adminPreviewProfileAreas(c={}){const text=[c.general_description,c.strengths,c.support_needs,c.strategies,c.watch_items].filter(Boolean).join(" ").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");const strengths=String(c.strengths||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");const support=String(c.support_needs||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");const defs=[["Comprensión de instrucciones",/(instruccion|indicacion|consigna|comprension)/],["Atención y enfoque",/(atencion|concentr|enfoc|distracci)/],["Participación",/(particip|sesion|grupo|equipo|interaccion)/],["Organización",/(organiz|planific|material|secuencia|tarea)/],["Autonomía",/(autonom|independ|por si mismo|trabajo individual)/],["Regulación emocional",/(regulacion|frustra|enojo|molest|tolerancia|emocion)/]];return defs.map(([label,rx])=>{let state="Sin información suficiente",tone="unknown";if(rx.test(support)){state="Requiere apoyo";tone="support"}else if(rx.test(strengths)){state="Fortaleza observada";tone="strength"}else if(rx.test(text)){state="En desarrollo";tone="developing"}return`<article class="preview-profile-pill ${tone}"><strong>${escapeHTML(label)}</strong><span>${state}</span></article>`}).join("");}
-function adminPreviewEvolution(data){const n=Number(data?.snapshot?.observation_count||0);return n<2?`<div class="preview-evolution-empty"><strong>Seguimiento inicial</strong><span>La gráfica aparecerá cuando existan registros comparables.</span></div>`:`<div class="preview-evolution-mini"><span>${n} registros disponibles</span><strong>La evolución se mostrará al docente en las áreas que tengan información comparable.</strong></div>`;}
+function normalizePreviewText(v){return String(v||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");}
+const previewProfileAreas=[
+  {key:"instructions",label:"Comprensión de instrucciones",icon:"↳"},
+  {key:"attention",label:"Atención y enfoque",icon:"◎"},
+  {key:"participation",label:"Participación",icon:"◌"},
+  {key:"organization",label:"Organización",icon:"▦"},
+  {key:"autonomy",label:"Autonomía",icon:"◇"},
+  {key:"emotional",label:"Regulación emocional",icon:"≈"},
+  {key:"motivation",label:"Motivación escolar",icon:"✦"},
+  {key:"social",label:"Convivencia social",icon:"☍"},
+  {key:"communication",label:"Comunicación y expresión",icon:"◔"},
+  {key:"frustration",label:"Tolerancia a la frustración",icon:"△"}
+];
+function previewReportText(c={}){return normalizePreviewText([c.general_description,c.strengths,c.support_needs,c.strategies,c.watch_items].filter(Boolean).join(" "));}
+function previewTextSignals(c={}, area){
+  const strengths=normalizePreviewText(c.strengths), support=normalizePreviewText(c.support_needs), all=previewReportText(c);
+  const patterns={
+    instructions:/(instruccion|indicacion|consigna|comprension|seguir indicaciones)/,
+    attention:/(atencion|concentr|enfoc|distracci)/,
+    participation:/(particip|sesion|grupo|equipo|interaccion|colabor)/,
+    organization:/(organiz|planific|material|secuencia|tarea|rutina)/,
+    autonomy:/(autonom|independ|por si mismo|trabajo individual|iniciativa propia)/,
+    emotional:/(regulacion|emocion|ansiedad|nervi|seguridad emocional|autorreg)/,
+    motivation:/(motiv|interes|disposicion|desmotivad|animo|involucr)/,
+    social:/(conviv|social|companero|pares|grupo|interaccion|relacion)/,
+    communication:/(comunic|expres|verbal|explicar|responder|lenguaje)/,
+    frustration:/(frustra|enojo|molest|tolerancia|persistencia|abandona|desespera)/
+  };
+  const rx=patterns[area] || /$^/;
+  return {mentioned:rx.test(all),strength:rx.test(strengths),support:rx.test(support)};
+}
+function previewDistributionForArea(snapshot={}, area){
+  const map={instructions:"instructions",attention:"attention",participation:"peers",organization:"organization",autonomy:"autonomy",emotional:"frustration",social:"peers",frustration:"frustration"};
+  return snapshot?.distribution?.[map[area]]||{};
+}
+function previewProfileAreaState(snapshot={},c={},area){
+  const d=previewDistributionForArea(snapshot,area), n=Number(d?.n||0), sig=previewTextSignals(c,area);
+  if(n>=3 && d.higher_support_pct!=null){
+    const pct=Number(d.higher_support_pct||0);
+    if(pct>=60)return{label:"Requiere apoyo",tone:"support",detail:"Apoyo observado con mayor frecuencia"};
+    if(pct>=25)return{label:"En desarrollo",tone:"developing",detail:"Conviene mantener seguimiento"};
+    if(sig.strength)return{label:"Fortaleza observada",tone:"strength",detail:"Fortaleza descrita en el informe"};
+    return{label:"En seguimiento",tone:"developing",detail:"Menor frecuencia de apoyo en los registros"};
+  }
+  if(sig.support)return{label:"Requiere apoyo",tone:"support",detail:"Identificado en el informe publicado"};
+  if(sig.strength)return{label:"Fortaleza observada",tone:"strength",detail:"Identificada en el informe publicado"};
+  if(sig.mentioned||n>0)return{label:"En desarrollo",tone:"developing",detail:n?`${n} registro${n===1?"":"s"} disponible${n===1?"":"s"}`:"Área mencionada en el informe"};
+  return{label:"Sin información suficiente",tone:"unknown",detail:"Aún sin evidencia específica"};
+}
+function previewScoreFromState(s){return s.tone==="strength"?3:s.tone==="developing"?2:s.tone==="support"?1:0;}
+function adminPreviewProfileAreas(snapshot={},c={}){
+  const states=previewProfileAreas.map(a=>({area:a,...previewProfileAreaState(snapshot,c,a.key)}));
+  return `<div class="student-profile-map student-profile-map-10 preview-profile-map"><div class="profile-map-center"><span>PERFIL INTEGRAL</span><strong>Seguimiento escolar</strong><small>Lectura visual para orientar el acompañamiento escolar y socioemocional</small></div>${states.map((item,i)=>`<article class="profile-node profile-node-${i+1} ${item.tone}"><i>${item.area.icon}</i><div><strong>${escapeHTML(item.area.label)}</strong><span>${escapeHTML(item.label)}</span><small>${escapeHTML(item.detail)}</small></div></article>`).join("")}</div><div class="profile-map-legend"><span><i class="dot strength"></i>Fortaleza observada</span><span><i class="dot developing"></i>En desarrollo</span><span><i class="dot support"></i>Requiere apoyo</span><span><i class="dot unknown"></i>Sin información suficiente</span></div>`;
+}
+function adminPreviewRadar(snapshot={},c={}){
+  const areas=previewProfileAreas.map(a=>({label:a.label,state:previewProfileAreaState(snapshot,c,a.key)}));
+  const values=areas.map(a=>previewScoreFromState(a.state));
+  const activeCount=values.filter(v=>v>0).length;
+  if(!activeCount)return `<div class="radar-empty preview-evolution-empty"><strong>Panorama inicial</strong><span>Todavía no hay suficiente información para construir un perfil gráfico más completo.</span></div>`;
+  const size=360, cx=180, cy=150, maxR=100, levels=3;
+  const angleStep=(Math.PI*2)/areas.length;
+  const point=(index,value)=>{const angle=-Math.PI/2 + index*angleStep;const radius=maxR*(value/levels);const x=cx + Math.cos(angle)*radius;const y=cy + Math.sin(angle)*radius;return `${x.toFixed(1)},${y.toFixed(1)}`;};
+  const axisPoint=(index,radius)=>{const angle=-Math.PI/2 + index*angleStep;return {x:cx + Math.cos(angle)*radius,y:cy + Math.sin(angle)*radius};};
+  const rings=Array.from({length:levels},(_,i)=>{const radius=maxR*((i+1)/levels);const pts=areas.map((_,idx)=>{const p=axisPoint(idx,radius);return `${p.x.toFixed(1)},${p.y.toFixed(1)}`;}).join(" ");return `<polygon points="${pts}" fill="none" stroke="rgba(148,163,184,.12)" stroke-width="1"/>`;}).join("");
+  const axes=areas.map((_,idx)=>{const p=axisPoint(idx,maxR);return `<line x1="${cx}" y1="${cy}" x2="${p.x.toFixed(1)}" y2="${p.y.toFixed(1)}" stroke="rgba(148,163,184,.12)" stroke-width="1"/>`;}).join("");
+  const labels=areas.map((a,idx)=>{const p=axisPoint(idx,maxR+22);return `<text x="${p.x.toFixed(1)}" y="${p.y.toFixed(1)}" text-anchor="middle">${escapeHTML(a.label)}</text>`;}).join("");
+  const areaPolygon=areas.map((_,idx)=>point(idx,values[idx])).join(" ");
+  const dots=areas.map((_,idx)=>{const [x,y]=point(idx,values[idx]).split(',');return `<circle cx="${x}" cy="${y}" r="3.5" fill="#38BDF8"/>`;}).join("");
+  return `<div class="radar-wrap preview-radar-wrap"><svg class="radar-svg preview-radar-svg" viewBox="0 0 ${size} 290" role="img" aria-label="Panorama general de observación"><g>${rings}${axes}<polygon class="radar-area" points="${areaPolygon}"/><g class="radar-dots">${dots}</g>${labels}</g></svg><small class="evolution-note">Lectura general por áreas escolares y socioemocionales.</small></div>`;
+}
 
 function renderTeacherReportPreview(data, useCurrentFields = false) {
   if (!data?.person) {$("#continuityPreview").className="teacher-report-preview-empty";$("#continuityPreview").innerHTML="Selecciona un alumno para ver el informe visual.";return;}
   const c=useCurrentFields?continuityFields():(data.continuity||{}),program=data.program||{};
   const sections=[["Fortalezas observadas",c.strengths],["Áreas que pueden requerir apoyo",c.support_needs],["Estrategias de apoyo recomendadas",c.strategies],["Aspectos a seguir observando",c.watch_items]].map(([title,text])=>`<article><span>${escapeHTML(title)}</span><p>${escapeHTML(text||"Pendiente de completar.")}</p></article>`).join("");
-  $("#continuityPreview").className="teacher-report-preview";$("#continuityPreview").innerHTML=`<div class="preview-report-head"><div><small>INFORME DE CONTINUIDAD · CIDEB</small><h3>${escapeHTML(data.person.full_name)}</h3><p>${escapeHTML(program.grade_level||"Grado no indicado")}${program.school_year?" · "+escapeHTML(program.school_year):""}${program.school_name?" · "+escapeHTML(program.school_name):""}</p></div><span>${continuityPreviewState()}</span></div><article class="preview-summary-feature"><span>RESUMEN GENERAL</span><h4>Panorama actual</h4><p>${escapeHTML(c.general_description||"Pendiente de completar.")}</p></article><div class="preview-visual-pair"><section class="preview-visual-card"><span class="eyebrow">PERFIL VISUAL DEL ALUMNO</span><h4>Áreas de acompañamiento</h4><div class="preview-profile-grid">${adminPreviewProfileAreas(c)}</div></section><section class="preview-visual-card"><span class="eyebrow">EVOLUCIÓN OBSERVADA</span><h4>Seguimiento en el tiempo</h4>${adminPreviewEvolution(data)}</section></div><div class="preview-text-grid">${sections}</div><div class="preview-disclaimer">Información descriptiva para continuidad y acompañamiento escolar. No constituye diagnóstico ni evaluación clínica.</div>`;
+  $("#continuityPreview").className="teacher-report-preview";$("#continuityPreview").innerHTML=`<div class="preview-report-head"><div><small>INFORME DE CONTINUIDAD · CIDEB</small><h3>${escapeHTML(data.person.full_name)}</h3><p>${escapeHTML(program.grade_level||"Grado no indicado")}${program.school_year?" · "+escapeHTML(program.school_year):""}${program.school_name?" · "+escapeHTML(program.school_name):""}</p></div><span>${continuityPreviewState()}</span></div><article class="preview-summary-feature"><span>RESUMEN GENERAL</span><h4>Panorama actual</h4><p>${escapeHTML(c.general_description||"Pendiente de completar.")}</p></article><div class="preview-visual-pair"><section class="preview-visual-card preview-visual-card-wide"><span class="eyebrow">PERFIL INTEGRAL DEL ALUMNO</span><h4>Mapa visual de acompañamiento</h4>${adminPreviewProfileAreas(data.snapshot,c)}</section><section class="preview-visual-card"><span class="eyebrow">PANORAMA GENERAL DE OBSERVACIÓN</span><h4>Lectura general por áreas</h4>${adminPreviewRadar(data.snapshot,c)}</section></div><div class="preview-text-grid">${sections}</div><div class="preview-disclaimer">Información descriptiva para continuidad y acompañamiento escolar. No constituye diagnóstico ni evaluación clínica.</div>`;
 }
 
 $("#continuityPerson").addEventListener("change", async () => {

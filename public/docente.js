@@ -38,45 +38,103 @@ function clearTeacherDraft(){const key=teacherDraftKey();if(key)sessionStorage.r
   el.addEventListener('input',saveTeacherDraft);
   el.addEventListener('change',saveTeacherDraft);
 });
-const teacherAreaLabels={attention:"Atención y enfoque",instructions:"Comprensión de instrucciones",organization:"Organización",peers:"Participación",frustration:"Regulación emocional",transitions:"Cambios / transiciones",autonomy:"Autonomía",help_seeking:"Solicitud de ayuda"};
-const trendFieldMap={attention:"attention_support",instructions:"instructions_support",organization:"organization_support",peers:"peer_support",frustration:"frustration_support",transitions:"transitions_support",autonomy:"autonomy_support",help_seeking:"help_seeking_support"};
+const teacherAreaLabels={
+  instructions:"Comprensión de instrucciones",
+  attention:"Atención y enfoque",
+  participation:"Participación",
+  organization:"Organización",
+  autonomy:"Autonomía",
+  emotional:"Regulación emocional",
+  motivation:"Motivación escolar",
+  social:"Convivencia social",
+  communication:"Comunicación y expresión",
+  frustration:"Tolerancia a la frustración"
+};
+const trendFieldMap={attention:"attention_support",instructions:"instructions_support",organization:"organization_support",participation:"peer_support",emotional:"frustration_support",autonomy:"autonomy_support",social:"peer_support",frustration:"frustration_support"};
 const visualProfileAreas=[
   {key:"instructions",label:"Comprensión de instrucciones",icon:"↳"},
   {key:"attention",label:"Atención y enfoque",icon:"◎"},
   {key:"participation",label:"Participación",icon:"◌"},
   {key:"organization",label:"Organización",icon:"▦"},
   {key:"autonomy",label:"Autonomía",icon:"◇"},
-  {key:"emotional",label:"Regulación emocional",icon:"≈"}
+  {key:"emotional",label:"Regulación emocional",icon:"≈"},
+  {key:"motivation",label:"Motivación escolar",icon:"✦"},
+  {key:"social",label:"Convivencia social",icon:"☍"},
+  {key:"communication",label:"Comunicación y expresión",icon:"◔"},
+  {key:"frustration",label:"Tolerancia a la frustración",icon:"△"}
 ];
-function normalizeText(v){return String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");}
+function normalizeText(v){return String(v||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");}
 function reportText(c={}){return normalizeText([c.general_description,c.strengths,c.support_needs,c.strategies,c.watch_items].filter(Boolean).join(" "));}
 function textSignals(c={}, area){
   const strengths=normalizeText(c.strengths), support=normalizeText(c.support_needs), all=reportText(c);
-  const patterns={instructions:/(instruccion|indicacion|consigna|comprension)/,attention:/(atencion|concentr|enfoc|distracci)/,participation:/(particip|sesion|grupo|equipo|interaccion)/,organization:/(organiz|planific|material|secuencia|tarea)/,autonomy:/(autonom|independ|por si mismo|trabajo individual)/,emotional:/(regulacion|frustra|enojo|molest|tolerancia|emocion)/};
-  const rx=patterns[area]; return {mentioned:rx.test(all),strength:rx.test(strengths),support:rx.test(support)};
+  const patterns={
+    instructions:/(instruccion|indicacion|consigna|comprension|seguir indicaciones)/,
+    attention:/(atencion|concentr|enfoc|distracci)/,
+    participation:/(particip|sesion|grupo|equipo|interaccion|colabor)/,
+    organization:/(organiz|planific|material|secuencia|tarea|rutina)/,
+    autonomy:/(autonom|independ|por si mismo|trabajo individual|iniciativa propia)/,
+    emotional:/(regulacion|emocion|ansiedad|nervi|seguridad emocional|autorreg)/,
+    motivation:/(motiv|interes|disposicion|desmotivad|animo|involucr)/,
+    social:/(conviv|social|companero|pares|grupo|interaccion|relacion)/,
+    communication:/(comunic|expres|verbal|explicar|responder|lenguaje)/,
+    frustration:/(frustra|enojo|molest|tolerancia|persistencia|abandona|desespera)/
+  };
+  const rx=patterns[area] || /$^/;
+  return {mentioned:rx.test(all),strength:rx.test(strengths),support:rx.test(support)};
 }
-function distributionForArea(snapshot={}, area){const map={instructions:"instructions",attention:"attention",participation:"peers",organization:"organization",autonomy:"autonomy",emotional:"frustration"};return snapshot?.distribution?.[map[area]]||{};}
+function distributionForArea(snapshot={}, area){
+  const map={instructions:"instructions",attention:"attention",participation:"peers",organization:"organization",autonomy:"autonomy",emotional:"frustration",social:"peers",frustration:"frustration"};
+  return snapshot?.distribution?.[map[area]]||{};
+}
 function profileAreaState(snapshot={},c={},area){
   const d=distributionForArea(snapshot,area), n=Number(d?.n||0), sig=textSignals(c,area);
-  if(n>=3 && d.higher_support_pct!=null){const pct=Number(d.higher_support_pct||0);if(pct>=60)return{label:"Requiere apoyo",tone:"support",detail:"Apoyo observado con mayor frecuencia"};if(pct>=25)return{label:"En desarrollo",tone:"developing",detail:"Conviene mantener seguimiento"};if(sig.strength)return{label:"Fortaleza observada",tone:"strength",detail:"Fortaleza descrita en el informe"};return{label:"En seguimiento",tone:"developing",detail:"Menor frecuencia de apoyo en los registros"};}
+  if(n>=3 && d.higher_support_pct!=null){
+    const pct=Number(d.higher_support_pct||0);
+    if(pct>=60)return{label:"Requiere apoyo",tone:"support",detail:"Apoyo observado con mayor frecuencia"};
+    if(pct>=25)return{label:"En desarrollo",tone:"developing",detail:"Conviene mantener seguimiento"};
+    if(sig.strength)return{label:"Fortaleza observada",tone:"strength",detail:"Fortaleza descrita en el informe"};
+    return{label:"En seguimiento",tone:"developing",detail:"Menor frecuencia de apoyo en los registros"};
+  }
   if(sig.support)return{label:"Requiere apoyo",tone:"support",detail:"Identificado en el informe publicado"};
   if(sig.strength)return{label:"Fortaleza observada",tone:"strength",detail:"Identificada en el informe publicado"};
   if(sig.mentioned||n>0)return{label:"En desarrollo",tone:"developing",detail:n?`${n} registro${n===1?"":"s"} disponible${n===1?"":"s"}`:"Área mencionada en el informe"};
   return{label:"Sin información suficiente",tone:"unknown",detail:"Aún sin evidencia específica"};
 }
-function profileMap(snapshot,c={}){return `<div class="student-profile-map"><div class="profile-map-center"><span>PERFIL VISUAL</span><strong>Seguimiento escolar</strong><small>Lectura rápida para orientar el acompañamiento</small></div>${visualProfileAreas.map((a,i)=>{const s=profileAreaState(snapshot,c,a.key);return`<article class="profile-node profile-node-${i+1} ${s.tone}"><i>${a.icon}</i><div><strong>${esc(a.label)}</strong><span>${esc(s.label)}</span><small>${esc(s.detail)}</small></div></article>`}).join("")}</div><div class="profile-map-legend"><span><i class="dot strength"></i>Fortaleza observada</span><span><i class="dot developing"></i>En desarrollo</span><span><i class="dot support"></i>Requiere apoyo</span><span><i class="dot unknown"></i>Sin información suficiente</span></div>`;}
-function evolutionValue(row,key){const field=trendFieldMap[key];const v=Number(row?.[field]);return Number.isFinite(v)&&v>0?v:null;}
-function evolutionVisual(snapshot,c={}){
-  const rows=(snapshot?.trend||[]).slice().reverse();
-  if(rows.length<2)return `<div class="evolution-empty"><span class="evolution-icon">⌁</span><strong>Seguimiento inicial</strong><p>Aún no hay suficientes registros para mostrar una evolución. La gráfica comenzará a compararse conforme existan nuevas observaciones.</p></div>`;
-  const candidateKeys=["instructions","attention","autonomy","organization","peers","frustration"];
-  const scored=candidateKeys.map(key=>({key,n:rows.filter(r=>evolutionValue(r,key)!=null).length})).filter(x=>x.n>=2).sort((a,b)=>b.n-a.n).slice(0,3);
-  if(!scored.length)return `<div class="evolution-empty"><span class="evolution-icon">⌁</span><strong>Seguimiento en construcción</strong><p>Ya existen varios registros, pero todavía no hay una misma área registrada suficientes veces para compararla.</p></div>`;
-  const w=520,h=190,padX=28,padY=24,min=1,max=3;const x=i=>padX+(rows.length===1?0:i*(w-padX*2)/(rows.length-1));const y=v=>h-padY-((v-min)/(max-min))*(h-padY*2);const palette=["var(--cyan)","var(--teal)","#a5b4fc"];
-  const paths=scored.map((s,idx)=>{let d="",started=false;rows.forEach((r,i)=>{const v=evolutionValue(r,s.key);if(v==null){started=false;return;}d+=`${started?" L":"M"} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`;started=true;});return`<path d="${d}" fill="none" stroke="${palette[idx]}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;}).join("");
-  const points=scored.map((s,idx)=>rows.map((r,i)=>{const v=evolutionValue(r,s.key);return v==null?"":`<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="4" fill="${palette[idx]}"/>`;}).join("")).join("");
-  const labels=rows.map((r,i)=>`<text x="${x(i).toFixed(1)}" y="184" text-anchor="middle">${esc(fmtDate(r.observation_date).replace(/\s+de\s+/g," ").replace(/\s+\d{4}$/,""))}</text>`).join("");
-  return `<div class="evolution-chart-wrap"><svg class="evolution-svg" viewBox="0 0 ${w} ${h}" role="img" aria-label="Evolución observada por registros"><line x1="${padX}" x2="${w-padX}" y1="${y(1)}" y2="${y(1)}"/><line x1="${padX}" x2="${w-padX}" y1="${y(2)}" y2="${y(2)}"/><line x1="${padX}" x2="${w-padX}" y1="${y(3)}" y2="${y(3)}"/>${paths}${points}${labels}</svg><div class="evolution-legend">${scored.map((s,idx)=>`<span><i style="background:${palette[idx]}"></i>${esc(teacherAreaLabels[s.key])}</span>`).join("")}</div><small class="evolution-note">La gráfica muestra cambios entre observaciones disponibles; no representa una calificación.</small></div>`;
+function profileScoreFromState(s){return s.tone==="strength"?3:s.tone==="developing"?2:s.tone==="support"?1:0;}
+function profileMap(snapshot,c={}){
+  const states=visualProfileAreas.map(a=>({area:a,...profileAreaState(snapshot,c,a.key)}));
+  return `<div class="student-profile-map student-profile-map-10"><div class="profile-map-center"><span>PERFIL INTEGRAL</span><strong>Seguimiento escolar</strong><small>Lectura visual para orientar el acompañamiento escolar y socioemocional</small></div>${states.map((item,i)=>`<article class="profile-node profile-node-${i+1} ${item.tone}"><i>${item.area.icon}</i><div><strong>${esc(item.area.label)}</strong><span>${esc(item.label)}</span><small>${esc(item.detail)}</small></div></article>`).join("")}</div><div class="profile-map-legend"><span><i class="dot strength"></i>Fortaleza observada</span><span><i class="dot developing"></i>En desarrollo</span><span><i class="dot support"></i>Requiere apoyo</span><span><i class="dot unknown"></i>Sin información suficiente</span></div>`;
+}
+function radarVisual(snapshot,c={}){
+  const areas=visualProfileAreas.map(a=>({label:a.label,state:profileAreaState(snapshot,c,a.key)}));
+  const values=areas.map(a=>profileScoreFromState(a.state));
+  const activeCount=values.filter(v=>v>0).length;
+  if(!activeCount){
+    return `<div class="radar-empty"><span class="evolution-icon">◎</span><strong>Panorama inicial</strong><p>Todavía no hay suficiente información para construir un perfil gráfico más completo. El radar se irá enriqueciendo con nuevas observaciones.</p></div>`;
+  }
+  const size=420, cx=210, cy=180, maxR=118, levels=3;
+  const angleStep=(Math.PI*2)/areas.length;
+  const point=(index,value)=>{
+    const angle=-Math.PI/2 + index*angleStep;
+    const radius=maxR*(value/levels);
+    const x=cx + Math.cos(angle)*radius;
+    const y=cy + Math.sin(angle)*radius;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  };
+  const axisPoint=(index,radius)=>{
+    const angle=-Math.PI/2 + index*angleStep;
+    return {x:cx + Math.cos(angle)*radius,y:cy + Math.sin(angle)*radius};
+  };
+  const rings=Array.from({length:levels},(_,i)=>{
+    const radius=maxR*((i+1)/levels);
+    const pts=areas.map((_,idx)=>{const p=axisPoint(idx,radius);return `${p.x.toFixed(1)},${p.y.toFixed(1)}`;}).join(" ");
+    return `<polygon points="${pts}" fill="none" stroke="rgba(148,163,184,.12)" stroke-width="1"/>`;
+  }).join("");
+  const axes=areas.map((_,idx)=>{const p=axisPoint(idx,maxR);return `<line x1="${cx}" y1="${cy}" x2="${p.x.toFixed(1)}" y2="${p.y.toFixed(1)}" stroke="rgba(148,163,184,.12)" stroke-width="1"/>`;}).join("");
+  const labels=areas.map((a,idx)=>{const p=axisPoint(idx,maxR+25);return `<text x="${p.x.toFixed(1)}" y="${p.y.toFixed(1)}" text-anchor="middle">${esc(a.label)}</text>`;}).join("");
+  const areaPolygon=areas.map((_,idx)=>point(idx,values[idx])).join(" ");
+  const dots=areas.map((_,idx)=>{const [x,y]=point(idx,values[idx]).split(',');return `<circle cx="${x}" cy="${y}" r="4" fill="#38BDF8"/>`;}).join("");
+  return `<div class="radar-wrap"><svg class="radar-svg" viewBox="0 0 ${size} 330" role="img" aria-label="Panorama general de observación"><g>${rings}${axes}<polygon class="radar-area" points="${areaPolygon}"/><g class="radar-dots">${dots}</g>${labels}</g></svg><div class="radar-legend"><span><i class="radar-swatch radar-swatch-1"></i>Requiere apoyo</span><span><i class="radar-swatch radar-swatch-2"></i>En desarrollo</span><span><i class="radar-swatch radar-swatch-3"></i>Fortaleza observada</span></div><small class="evolution-note">Lectura general por áreas escolares y socioemocionales. Es una visualización descriptiva, no una calificación.</small></div>`;
 }
 
 function transferReceivedHtml(transfer){
@@ -108,7 +166,7 @@ async function openStudent(id){
   $("#teacherReportState").innerHTML=`${transferReceivedHtml(d.latest_transfer)}${approved?"":`<div class="report-pending-card"><span class="eyebrow">INFORME EN PREPARACIÓN</span><h3>Aún no hay un informe de continuidad publicado.</h3><p>El profesional está revisando la información. Si tienes información útil, puedes enviar un comentario complementario. Alex decidirá si debe integrarse al expediente.</p></div>`}`;
   if(approved){
     const pro=(d.professional_observations||[]);const proBlock=pro.length?`<section class="teacher-professional-observations"><div class="report-card-head"><div><span class="eyebrow">APORTES DEL PROFESIONAL</span><h3>Observaciones compartidas por Alex</h3></div><small>Solo contenido publicado</small></div><div class="teacher-professional-list">${pro.map(o=>`<article><div><strong>${esc(fmtDate(o.observation_date)||"—")}</strong><span>${esc(o.context||o.subject||"Seguimiento profesional")}</span></div><p>${esc(o.description||"")}</p>${o.strategy_used?`<small><b>Estrategia:</b> ${esc(o.strategy_used)}</small>`:""}${o.recommendation_text?`<small><b>Recomendación:</b> ${esc(o.recommendation_text)}</small>`:""}</article>`).join("")}</div></section>`:"";
-    $("#teacherContinuity").innerHTML=`<article class="continuity-feature teacher-summary-feature"><span>RESUMEN GENERAL</span><h3>Panorama actual</h3><p>${esc(c.general_description||"—")}</p></article><div class="teacher-visual-dashboard"><section class="report-card visual-profile-card"><div class="report-card-head"><div><span class="eyebrow">PERFIL VISUAL DEL ALUMNO</span><h3>Áreas de acompañamiento</h3></div><small>Lectura descriptiva</small></div>${profileMap(d.snapshot,c)}</section><section class="report-card evolution-card"><div class="report-card-head"><div><span class="eyebrow">EVOLUCIÓN OBSERVADA</span><h3>Seguimiento en el tiempo</h3></div><small>Solo con registros comparables</small></div>${evolutionVisual(d.snapshot,c)}</section></div><div class="continuity-detail-grid teacher-action-grid"><article><span>FORTALEZAS OBSERVADAS</span><p>${esc(c.strengths||"—")}</p></article><article><span>ÁREAS QUE PUEDEN REQUERIR APOYO</span><p>${esc(c.support_needs||"—")}</p></article><article><span>ESTRATEGIAS DE APOYO RECOMENDADAS</span><p>${esc(c.strategies||"—")}</p></article><article><span>ASPECTOS A SEGUIR OBSERVANDO</span><p>${esc(c.watch_items||"—")}</p></article></div>${proBlock}<div class="teacher-report-disclaimer">Este informe presenta información descriptiva para continuidad y acompañamiento escolar. Se basa en observaciones disponibles y no constituye evaluación clínica ni diagnóstico.</div>`;
+    $("#teacherContinuity").innerHTML=`<article class="continuity-feature teacher-summary-feature"><span>RESUMEN GENERAL</span><h3>Panorama actual</h3><p>${esc(c.general_description||"—")}</p></article><div class="teacher-visual-dashboard"><section class="report-card visual-profile-card"><div class="report-card-head"><div><span class="eyebrow">PERFIL INTEGRAL DEL ALUMNO</span><h3>Mapa visual de acompañamiento</h3></div><small>Lectura descriptiva</small></div>${profileMap(d.snapshot,c)}</section><section class="report-card evolution-card"><div class="report-card-head"><div><span class="eyebrow">PANORAMA GENERAL DE OBSERVACIÓN</span><h3>Lectura general por áreas</h3></div><small>Radar descriptivo</small></div>${radarVisual(d.snapshot,c)}</section></div><div class="continuity-detail-grid teacher-action-grid"><article><span>FORTALEZAS OBSERVADAS</span><p>${esc(c.strengths||"—")}</p></article><article><span>ÁREAS QUE PUEDEN REQUERIR APOYO</span><p>${esc(c.support_needs||"—")}</p></article><article><span>ESTRATEGIAS DE APOYO RECOMENDADAS</span><p>${esc(c.strategies||"—")}</p></article><article><span>ASPECTOS A SEGUIR OBSERVANDO</span><p>${esc(c.watch_items||"—")}</p></article></div>${proBlock}<div class="teacher-report-disclaimer">Este informe presenta información descriptiva para continuidad y acompañamiento escolar. Se basa en observaciones disponibles y no constituye evaluación clínica ni diagnóstico.</div>`;
   }
   $("#teacherOwnObservations").innerHTML=d.own_observations.length?d.own_observations.map(o=>`<article class="note-card"><span>${esc(fmtDate(o.observation_date))} · ${esc(o.subject||o.context||"")}</span><p>${esc(o.description)}</p><small>${o.status==="reviewed"?"Revisado":"Pendiente de revisión"}${o.professional_comment?" · Comentario profesional: "+esc(o.professional_comment):""}</small></article>`).join(""):`<p class="muted">Aún no has enviado comentarios.</p>`;
   const today=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Monterrey',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());$("#tObsDate").max=today;$("#tObsDate").value=today;restoreTeacherDraft();
