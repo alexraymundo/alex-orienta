@@ -1890,47 +1890,14 @@ function continuityFields() {
   };
 }
 
+function adminPreviewProfileAreas(c={}){const text=[c.general_description,c.strengths,c.support_needs,c.strategies,c.watch_items].filter(Boolean).join(" ").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");const strengths=String(c.strengths||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");const support=String(c.support_needs||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");const defs=[["Comprensión de instrucciones",/(instruccion|indicacion|consigna|comprension)/],["Atención y enfoque",/(atencion|concentr|enfoc|distracci)/],["Participación",/(particip|sesion|grupo|equipo|interaccion)/],["Organización",/(organiz|planific|material|secuencia|tarea)/],["Autonomía",/(autonom|independ|por si mismo|trabajo individual)/],["Regulación emocional",/(regulacion|frustra|enojo|molest|tolerancia|emocion)/]];return defs.map(([label,rx])=>{let state="Sin información suficiente",tone="unknown";if(rx.test(support)){state="Requiere apoyo";tone="support"}else if(rx.test(strengths)){state="Fortaleza observada";tone="strength"}else if(rx.test(text)){state="En desarrollo";tone="developing"}return`<article class="preview-profile-pill ${tone}"><strong>${escapeHTML(label)}</strong><span>${state}</span></article>`}).join("");}
+function adminPreviewEvolution(data){const n=Number(data?.snapshot?.observation_count||0);return n<2?`<div class="preview-evolution-empty"><strong>Seguimiento inicial</strong><span>La gráfica aparecerá cuando existan registros comparables.</span></div>`:`<div class="preview-evolution-mini"><span>${n} registros disponibles</span><strong>La evolución se mostrará al docente en las áreas que tengan información comparable.</strong></div>`;}
+
 function renderTeacherReportPreview(data, useCurrentFields = false) {
-  if (!data?.person) {
-    $("#continuityPreview").className = "teacher-report-preview-empty";
-    $("#continuityPreview").innerHTML = "Selecciona un alumno para ver el informe visual.";
-    return;
-  }
-
-  const c = useCurrentFields ? continuityFields() : (data.continuity || {});
-  const s = data.snapshot || { distribution:{}, contexts:[], trend:[] };
-  const program = data.program || {};
-  const top = topSupportArea(s);
-  const topContext = (s.contexts || [])[0];
-
-  const bars = renderSupportBars(s, true, c);
-  const contexts = renderContextSummary(s, true);
-
-  const sections = [
-    ["Descripción general", c.general_description],
-    ["Fortalezas observadas", c.strengths],
-    ["Puede requerir apoyo en", c.support_needs],
-    ["Estrategias de apoyo recomendadas", c.strategies],
-    ["Aspectos a seguir observando", c.watch_items]
-  ].map(([title,text]) => `<article><span>${escapeHTML(title)}</span><p>${escapeHTML(text || "Pendiente de completar.")}</p></article>`).join("");
-
-  $("#continuityPreview").className = "teacher-report-preview";
-  $("#continuityPreview").innerHTML = `
-    <div class="preview-report-head">
-      <div><small>INFORME DE CONTINUIDAD · CIDEB</small><h3>${escapeHTML(data.person.full_name)}</h3><p>${escapeHTML(program.grade_level || "Grado no indicado")}${program.school_year ? " · "+escapeHTML(program.school_year) : ""}${program.school_name ? " · "+escapeHTML(program.school_name) : ""}</p></div>
-      <span>${continuityPreviewState()}</span>
-    </div>
-    <div class="preview-kpis">
-      <article><span>Registros considerados</span><strong>${s.observation_count || 0}</strong><small>${Number(s.teacher_count||0)} docentes · ${Number(s.professional_count||0)} profesional</small></article>
-      <article><span>Tendencia por área</span><strong>${escapeHTML(top.label)}</strong></article>
-      <article><span>Contexto más registrado</span><strong>${escapeHTML(topContext?.context || "—")}</strong></article>
-    </div>
-    <section class="preview-chart-card"><h4>Áreas observadas <small>solo se muestran tendencias con ≥3 registros por área</small></h4>${bars}</section>
-    <section class="preview-chart-card"><h4>Contextos registrados</h4>${contexts}</section>
-    <div class="preview-evidence-note"><span>NIVEL DE EVIDENCIA</span><strong>${escapeHTML(continuityEvidenceLabel(s).label)}</strong><small>${escapeHTML(continuityEvidenceLabel(s).note)}</small></div>
-    <div class="preview-text-grid">${sections}</div>
-    <div class="preview-disclaimer">Información descriptiva para continuidad escolar. No constituye diagnóstico ni evaluación clínica.</div>
-  `;
+  if (!data?.person) {$("#continuityPreview").className="teacher-report-preview-empty";$("#continuityPreview").innerHTML="Selecciona un alumno para ver el informe visual.";return;}
+  const c=useCurrentFields?continuityFields():(data.continuity||{}),program=data.program||{};
+  const sections=[["Fortalezas observadas",c.strengths],["Áreas que pueden requerir apoyo",c.support_needs],["Estrategias de apoyo recomendadas",c.strategies],["Aspectos a seguir observando",c.watch_items]].map(([title,text])=>`<article><span>${escapeHTML(title)}</span><p>${escapeHTML(text||"Pendiente de completar.")}</p></article>`).join("");
+  $("#continuityPreview").className="teacher-report-preview";$("#continuityPreview").innerHTML=`<div class="preview-report-head"><div><small>INFORME DE CONTINUIDAD · CIDEB</small><h3>${escapeHTML(data.person.full_name)}</h3><p>${escapeHTML(program.grade_level||"Grado no indicado")}${program.school_year?" · "+escapeHTML(program.school_year):""}${program.school_name?" · "+escapeHTML(program.school_name):""}</p></div><span>${continuityPreviewState()}</span></div><article class="preview-summary-feature"><span>RESUMEN GENERAL</span><h4>Panorama actual</h4><p>${escapeHTML(c.general_description||"Pendiente de completar.")}</p></article><div class="preview-visual-pair"><section class="preview-visual-card"><span class="eyebrow">PERFIL VISUAL DEL ALUMNO</span><h4>Áreas de acompañamiento</h4><div class="preview-profile-grid">${adminPreviewProfileAreas(c)}</div></section><section class="preview-visual-card"><span class="eyebrow">EVOLUCIÓN OBSERVADA</span><h4>Seguimiento en el tiempo</h4>${adminPreviewEvolution(data)}</section></div><div class="preview-text-grid">${sections}</div><div class="preview-disclaimer">Información descriptiva para continuidad y acompañamiento escolar. No constituye diagnóstico ni evaluación clínica.</div>`;
 }
 
 $("#continuityPerson").addEventListener("change", async () => {

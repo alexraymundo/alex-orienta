@@ -48,3 +48,12 @@ Aplicar `migration-v8.6.sql` en D1 antes o junto con el despliegue. El Worker ta
 - La IA no debe afirmar que una estrategia funcionó salvo que exista evidencia expresa.
 - Si no existen áreas estructuradas marcadas, NORTIA identifica áreas cualitativas a partir del contenido del informe y las muestra como “Áreas identificadas en el registro”.
 - Estas áreas cualitativas no generan porcentajes, scores ni tendencias; solo indican temas presentes en el contenido publicado.
+
+
+## V8.6.3 — Perfil visual docente
+- El informe docente ahora prioriza resumen, perfil visual, evolución y acciones recomendadas.
+- Se retiraron del frente docente los KPIs técnicos de conteo/contexto.
+- Se agregó un mapa visual de 6 áreas: comprensión de instrucciones, atención, participación, organización, autonomía y regulación emocional.
+- El mapa distingue Fortaleza observada / En desarrollo / Requiere apoyo / Sin información suficiente sin presentar un score psicológico.
+- La evolución solo grafica áreas con al menos dos registros comparables; con un solo registro muestra Seguimiento inicial.
+- La vista previa de Alex refleja la nueva estructura.
