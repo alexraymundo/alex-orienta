@@ -1774,8 +1774,14 @@ function continuityEvidenceLabel(snapshot) {
 }
 
 function continuityHasText() {
-  return ["#contGeneral","#contStrengths","#contSupport","#contStrategies","#contWatch"]
+  return ["#continuitySourceNotes", "#contGeneral", "#contStrengths", "#contSupport", "#contStrategies", "#contWatch"]
     .some(selector => ($(selector)?.value || "").trim());
+}
+
+function continuityPreviewState() {
+  const draftLabel = $("#continuityDraftState")?.textContent || "BORRADOR";
+  if (/BORRADOR/i.test(draftLabel)) return "BORRADOR";
+  return /PUBLICADO/i.test(draftLabel) ? "PUBLICADO" : "BORRADOR";
 }
 
 function applyContinuityAIDraft(data) {
@@ -1801,21 +1807,24 @@ async function generateContinuityAIDraft() {
     if (status) status.textContent = "Selecciona un alumno primero.";
     return;
   }
-  if (continuityHasText()) {
+  const sourceNotes = ($("#continuitySourceNotes")?.value || "").trim();
+  const hasGeneratedText = ["#contGeneral", "#contStrengths", "#contSupport", "#contStrategies", "#contWatch"]
+    .some(selector => ($(selector)?.value || "").trim());
+  if (hasGeneratedText) {
     const replace = confirm("La IA reemplazará el texto que está actualmente en los campos del borrador. ¿Continuar?");
     if (!replace) return;
   }
   const buttons = [$("#generateContinuityAIFromContextBtn"), $("#regenerateContinuityAI")].filter(Boolean);
   buttons.forEach(b => { b.disabled = true; b.dataset.oldText = b.textContent; b.textContent = "GENERANDO…"; });
-  if (status) { status.style.color = ""; status.textContent = "NORTIA está organizando únicamente las observaciones escolares autorizadas…"; }
+  if (status) { status.style.color = ""; status.textContent = "NORTIA está organizando la evidencia autorizada y tus notas para proponer el borrador…"; }
   try {
     const data = await api("/api/admin/school-continuity/ai-draft", {
       method: "POST",
-      body: JSON.stringify({ person_id: personId })
+      body: JSON.stringify({ person_id: personId, alex_notes: sourceNotes })
     });
     applyContinuityAIDraft(data);
-    setReportStep("write");
-    if (status) { status.style.color = "#86EFAC"; status.textContent = "Borrador generado. Revísalo y edítalo antes de publicarlo."; }
+    $("#contGeneral")?.focus();
+    if (status) { status.style.color = "#86EFAC"; status.textContent = "Borrador generado. Revísalo, edítalo y luego guárdalo o publícalo."; }
   } catch (e) {
     if (status) { status.style.color = "#FDA4AF"; status.textContent = e.message; }
     else adminToast(e.message, "error");
@@ -1889,7 +1898,7 @@ function renderTeacherReportPreview(data, useCurrentFields = false) {
   $("#continuityPreview").innerHTML = `
     <div class="preview-report-head">
       <div><small>INFORME DE CONTINUIDAD · CIDEB</small><h3>${escapeHTML(data.person.full_name)}</h3><p>${escapeHTML(program.grade_level || "Grado no indicado")}${program.school_year ? " · "+escapeHTML(program.school_year) : ""}${program.school_name ? " · "+escapeHTML(program.school_name) : ""}</p></div>
-      <span>${$("#contApprove").checked ? "PUBLICADO" : "BORRADOR"}</span>
+      <span>${continuityPreviewState()}</span>
     </div>
     <div class="preview-kpis">
       <article><span>Registros considerados</span><strong>${s.observation_count || 0}</strong><small>${Number(s.teacher_count||0)} docentes · ${Number(s.professional_count||0)} profesional</small></article>
@@ -1905,21 +1914,21 @@ function renderTeacherReportPreview(data, useCurrentFields = false) {
 }
 
 $("#continuityPerson").addEventListener("change", async () => {
-  setReportStep("context");
   const id = $("#continuityPerson").value;
   if (!id) return;
   try {
     const d = await api(`/api/admin/school-continuity?person_id=${encodeURIComponent(id)}`);
     currentContinuityData = d;
     const c = d.continuity || {};
+    $("#continuitySourceNotes").value = "";
     $("#contGeneral").value = c.general_description || "";
     $("#contStrengths").value = c.strengths || "";
     $("#contSupport").value = c.support_needs || "";
     $("#contStrategies").value = c.strategies || "";
     $("#contWatch").value = c.watch_items || "";
-    $("#contApprove").checked = false;
     if ($("#continuityAIMeta")) $("#continuityAIMeta").hidden = true;
     if ($("#continuityAIContextStatus")) $("#continuityAIContextStatus").textContent = "";
+    if ($("#continuityStatus")) $("#continuityStatus").textContent = "";
     const hasPublished = !!d.published?.approved_at;
     $("#continuityDraftState").textContent = d.has_draft ? (hasPublished ? "BORRADOR · PUBLICADO SE CONSERVA" : "BORRADOR") : (hasPublished ? "PUBLICADO" : "BORRADOR");
     $("#continuityDraftState").classList.toggle("published", hasPublished && !d.has_draft);
@@ -1931,20 +1940,24 @@ $("#continuityPerson").addEventListener("change", async () => {
   }
 });
 
-["#contGeneral","#contStrengths","#contSupport","#contStrategies","#contWatch"].forEach(selector => {
-  $(selector).addEventListener("input", () => currentContinuityData && renderTeacherReportPreview(currentContinuityData, true));
-});
-$("#contApprove").addEventListener("change", () => {
-  $("#continuityDraftState").textContent = $("#contApprove").checked ? "LISTO PARA PUBLICAR" : (currentContinuityData?.published?.approved_at ? "BORRADOR · PUBLICADO SE CONSERVA" : "BORRADOR");
-  $("#continuityDraftState").classList.toggle("published", false);
-  if (currentContinuityData) renderTeacherReportPreview(currentContinuityData, true);
+["#continuitySourceNotes", "#contGeneral", "#contStrengths", "#contSupport", "#contStrategies", "#contWatch"].forEach(selector => {
+  $(selector)?.addEventListener("input", () => currentContinuityData && renderTeacherReportPreview(currentContinuityData, true));
 });
 
-$("#saveContinuityBtn").addEventListener("click", async () => {
+async function saveContinuityReport(approve) {
   const id = $("#continuityPerson").value;
-  if (!id) return;
+  if (!id) {
+    $("#continuityStatus").style.color = "#FDA4AF";
+    $("#continuityStatus").textContent = "Selecciona un alumno primero.";
+    return;
+  }
+  const actionBtn = approve ? $("#publishContinuityBtn") : $("#saveContinuityDraftBtn");
+  const otherBtn = approve ? $("#saveContinuityDraftBtn") : $("#publishContinuityBtn");
+  [actionBtn, otherBtn].filter(Boolean).forEach(b => { b.disabled = true; });
+  const originalText = actionBtn?.textContent;
+  if (actionBtn) actionBtn.textContent = approve ? "PUBLICANDO…" : "GUARDANDO…";
   try {
-    await api("/api/admin/school-continuity", {
+    const response = await api("/api/admin/school-continuity", {
       method: "POST",
       body: JSON.stringify({
         person_id:id,
@@ -1953,23 +1966,29 @@ $("#saveContinuityBtn").addEventListener("click", async () => {
         support_needs:$("#contSupport").value,
         strategies:$("#contStrategies").value,
         watch_items:$("#contWatch").value,
-        approve:$("#contApprove").checked
+        approve
       })
     });
     $("#continuityStatus").style.color="#86EFAC";
-    $("#continuityStatus").textContent=$("#contApprove").checked ? "Informe guardado y publicado para docentes asignados." : "Borrador guardado. El docente todavía no lo ve.";
+    $("#continuityStatus").textContent = approve ? `Informe publicado para docentes asignados${response?.version_number ? ` · versión ${response.version_number}` : ""}.` : "Borrador guardado. El docente todavía no lo ve.";
     const fresh = await api(`/api/admin/school-continuity?person_id=${encodeURIComponent(id)}`);
     currentContinuityData = fresh;
-    $("#contApprove").checked = false;
     $("#continuityDraftState").textContent = fresh.has_draft ? "BORRADOR · PUBLICADO SE CONSERVA" : (fresh.published?.approved_at ? "PUBLICADO" : "BORRADOR");
+    $("#continuityDraftState").classList.toggle("published", !!fresh.published?.approved_at && !fresh.has_draft);
     $("#continuityVersionLabel").textContent = fresh.latest_version ? `Versión publicada V${fresh.latest_version}` : "Sin versiones publicadas";
     renderTeacherReportPreview(fresh, true);
     await loadAudit();
   } catch(e) {
     $("#continuityStatus").style.color="#FDA4AF";
     $("#continuityStatus").textContent=e.message;
+  } finally {
+    [actionBtn, otherBtn].filter(Boolean).forEach(b => { b.disabled = false; });
+    if (actionBtn) actionBtn.textContent = originalText || (approve ? "PUBLICAR INFORME" : "GUARDAR BORRADOR");
   }
-});
+}
+
+$("#saveContinuityDraftBtn")?.addEventListener("click", () => saveContinuityReport(false));
+$("#publishContinuityBtn")?.addEventListener("click", () => saveContinuityReport(true));
 
 async function loadFamilyData(){
   const id=$("#familyPerson").value;if(!id)return;

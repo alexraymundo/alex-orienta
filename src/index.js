@@ -2424,6 +2424,7 @@ Nunca tienes acceso a las notas privadas de Alex.
 
     const b = await parseBody(req);
     const personId = safeText(b.person_id, 120);
+    const alexNotes = safeText(b.alex_notes, 3000);
     if (!personId) return json({ error: "Persona obligatoria." }, 400);
     if (!env.AI || typeof env.AI.run !== "function") {
       return json({ error: "La IA interna de NORTIA no está disponible en este momento." }, 503);
@@ -2490,7 +2491,7 @@ Nunca tienes acceso a las notas privadas de Alex.
 Eres un asistente interno de redacción para NORTIA. Tu trabajo es preparar un BORRADOR de continuidad escolar para que Alex lo revise antes de publicarlo.
 
 REGLAS OBLIGATORIAS:
-- Usa únicamente la evidencia escolar autorizada incluida en el mensaje. No inventes hechos.
+- Usa únicamente la evidencia escolar autorizada incluida en el mensaje y, si existen, las notas textuales de Alex incluidas como contexto adicional. No inventes hechos.
 - Nunca diagnostiques ni sugieras trastornos, condiciones clínicas, intenciones, personalidad fija o causas psicológicas.
 - No uses lenguaje estigmatizante ni etiquetas sobre el alumno.
 - Si hay 1 o 2 registros, NO hables de tendencias, patrones estables ni generalices. Usa expresiones como "en el registro disponible", "se observó" o "puede ser útil probar".
@@ -2511,6 +2512,7 @@ RESPONDE EXCLUSIVAMENTE CON ESTAS 5 ETIQUETAS, SIN JSON, SIN MARKDOWN Y SIN TEXT
     const userContext = {
       student: { full_name: person.full_name, age: person.age ?? null },
       school: { school_name: program?.school_name || "CIDEB", grade_level: program?.grade_level || "", school_period: program?.school_year || "" },
+      alex_notes: alexNotes || "",
       evidence_level: evidenceLabel,
       observation_count: evidenceCount,
       distribution: snapshot.distribution,

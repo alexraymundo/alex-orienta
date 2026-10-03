@@ -497,43 +497,34 @@
         <div class="panel professional-observation-history"><div class="panel-head"><div><h3>Mis observaciones del alumno</h3><p class="muted">Puedes publicar, ocultar o eliminar tus registros cuando sea necesario.</p></div></div><div id="adminProfessionalObservations"><p class="muted">Selecciona un alumno.</p></div></div>
       </div>
     </section>
-
     <section class="admin-view" id="view-continuity">
       <div class="clean-page-head">
-        <div><span class="eyebrow">CIDEB · INFORME PARA DOCENTES</span><h2>Informe de continuidad</h2><p class="muted">Primero revisa los datos, después redacta y al final previsualiza lo que verá el maestro.</p></div>
+        <div><span class="eyebrow">CIDEB · INFORME PARA DOCENTES</span><h2>Informe de continuidad</h2><p class="muted">Escribe tus observaciones en texto libre, deja que la IA proponga el borrador y después edítalo antes de guardarlo o publicarlo.</p></div>
         <span class="report-safety-pill">NO DIAGNÓSTICO</span>
       </div>
 
       <div class="panel report-student-picker"><label>Buscar alumno<input id="continuityPersonSearch" aria-label="Buscar alumno para informe" placeholder="Nombre o matrícula…" autocomplete="off"></label><label>Alumno<select id="continuityPerson"><option value="">Escribe para buscar</option></select></label><div><small id="continuityVersionLabel">Sin versiones publicadas</small><strong id="continuityDraftState">BORRADOR</strong></div></div>
 
-      <div class="report-flow-tabs" role="tablist" aria-label="Pasos del informe">
-        <button class="active" role="tab" aria-selected="true" aria-controls="reportStepContext" data-report-step="context"><span>1</span> Revisar contexto</button>
-        <button role="tab" aria-selected="false" aria-controls="reportStepWrite" data-report-step="write"><span>2</span> Redactar</button>
-        <button role="tab" aria-selected="false" aria-controls="reportStepPreview" data-report-step="preview"><span>3</span> Vista del maestro</button>
-      </div>
-
-      <section class="report-step active" id="reportStepContext" role="tabpanel">
-        <div class="panel clean-report-step">
-          <span class="eyebrow">PASO 1</span>
-          <h3>Revisa la información disponible</h3>
-          <p class="muted">Este resumen usa tus observaciones profesionales publicadas y únicamente los comentarios docentes que tú hayas marcado expresamente para integrar al expediente. Las notas privadas nunca se envían a la IA ni al docente.</p>
+      <section class="report-single-stage" id="reportSingleStage">
+        <div class="panel clean-report-step continuity-editor-panel">
+          <span class="eyebrow">BORRADOR ASISTIDO</span>
+          <h3>1. Escribe lo que observaste</h3>
+          <p class="muted">Puedes escribir aquí en texto libre lo que viste, detectaste o te compartieron. NORTIA usará ese contexto, junto con la información escolar autorizada ya registrada, para proponerte el informe.</p>
           <div id="adminSchoolSnapshot" class="snapshot-card compact-snapshot"></div>
+          <label>Notas de Alex para este borrador<textarea id="continuitySourceNotes" rows="7" placeholder="Ejemplo: Hoy observé que durante la sesión el alumno siguió mejor indicaciones cuando se le explicaron paso a paso. En actividades grupales necesitó apoyo adicional para comprender instrucciones en inglés..."></textarea></label>
           <div class="report-context-actions">
-            <button class="secondary-btn" id="addObservationFromReportBtn">+ AGREGAR OBSERVACIÓN</button>
+            <button class="secondary-btn" id="addObservationFromReportBtn">+ AGREGAR OBSERVACIÓN PROFESIONAL</button>
             <button class="secondary-btn ai-draft-btn" id="generateContinuityAIFromContextBtn">✦ GENERAR BORRADOR CON IA</button>
-            <button class="primary-btn" data-go-report-step="write">CONTINUAR A REDACTAR</button>
           </div>
           <div id="continuityAIContextStatus" class="status" role="status" aria-live="polite"></div>
-        </div>
-      </section>
 
-      <section class="report-step" id="reportStepWrite" role="tabpanel" hidden>
-        <div class="panel clean-report-step">
-          <span class="eyebrow">PASO 2</span><h3>Redacta información útil para el docente</h3><p class="muted">Solo contenido descriptivo, concreto y aplicable en el aula.</p>
           <div class="ai-draft-review" id="continuityAIMeta" hidden>
             <div><span class="eyebrow">NORTIA · BORRADOR ASISTIDO</span><strong id="continuityAIEvidence">Datos iniciales</strong><small id="continuityAINote">Revisa y edita todo antes de publicar.</small></div>
             <button class="text-action" id="regenerateContinuityAI">Regenerar borrador</button>
           </div>
+
+          <h3 style="margin-top:18px">2. Edita el informe</h3>
+          <p class="muted">La IA llena estos campos como propuesta. Tú decides qué dejar, cambiar o borrar antes de publicarlo.</p>
           <div class="form-stack clean-writing-form">
             <label>Descripción general<textarea id="contGeneral" rows="4" placeholder="Panorama breve y descriptivo del alumno en el contexto escolar."></textarea></label>
             <label>Fortalezas observadas<textarea id="contStrengths" rows="3" placeholder="Capacidades, intereses y respuestas positivas observadas."></textarea></label>
@@ -541,23 +532,21 @@
             <label>Estrategias que han funcionado<textarea id="contStrategies" rows="3" placeholder="Acciones concretas que otros docentes pueden replicar."></textarea></label>
             <label>Aspectos a seguir observando<textarea id="contWatch" rows="3" placeholder="Qué conviene observar durante el siguiente periodo."></textarea></label>
           </div>
-          <div class="flow-actions"><button class="secondary-btn" data-go-report-step="context">VOLVER</button><button class="primary-btn" data-go-report-step="preview">VER VISTA DEL MAESTRO</button></div>
-        </div>
-      </section>
 
-      <section class="report-step" id="reportStepPreview" role="tabpanel" hidden>
+          <div class="flow-actions continuity-direct-actions">
+            <button class="secondary-btn" id="saveContinuityDraftBtn">GUARDAR BORRADOR</button>
+            <button class="primary-btn" id="publishContinuityBtn">PUBLICAR INFORME</button>
+          </div>
+          <div id="continuityStatus" class="status"></div>
+        </div>
+
         <div class="panel teacher-preview-panel clean-preview-panel">
           <div class="preview-browser-bar"><span></span><span></span><span></span><small>ASÍ LO VERÁ EL DOCENTE</small></div>
           <div id="continuityPreview" class="teacher-report-preview-empty">Selecciona un alumno para ver el informe visual.</div>
         </div>
-        <div class="panel publish-panel">
-          <div><span class="eyebrow">PUBLICACIÓN</span><h3>¿Está listo para compartir?</h3><p class="muted">El docente no verá los cambios hasta que tú los publiques.</p></div>
-          <label class="toggle-line publish-toggle"><input id="contApprove" type="checkbox"><span><strong>Publicar para docentes asignados</strong><small>Apagado = borrador privado de Alex.</small></span></label>
-          <div class="flow-actions"><button class="secondary-btn" data-go-report-step="write">SEGUIR EDITANDO</button><button class="primary-btn" id="saveContinuityBtn">GUARDAR INFORME</button></div>
-          <div id="continuityStatus" class="status"></div>
-        </div>
       </section>
     </section>
+
 
     <section class="admin-view" id="view-families">
       <div class="clean-page-head"><div><span class="eyebrow">CIDEB · FAMILIAS</span><h2>Familias</h2><p class="muted">Separa quién tiene acceso de la información que decides compartir.</p></div></div>

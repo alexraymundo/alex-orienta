@@ -33,3 +33,11 @@ Aplicar `migration-v8.6.sql` en D1 antes o junto con el despliegue. El Worker ta
 - Publicación manual del informe.
 - Notas privadas.
 - Seguridad y auditoría.
+
+
+## Ajuste posterior solicitado (03-oct-2026)
+- Se simplificó el flujo de Informe para docentes a una sola pantalla.
+- Se agregó caja de texto libre para que Alex escriba observaciones/notas del borrador.
+- La IA ahora usa tanto la evidencia escolar autorizada como las notas libres de Alex para proponer el informe.
+- Se sustituyó el checkbox de publicación por dos acciones directas: Guardar borrador y Publicar informe.
+- Se dejó vista previa del docente dentro de la misma pantalla de edición.
