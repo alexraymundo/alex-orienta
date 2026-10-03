@@ -249,19 +249,6 @@ $$('[data-observation-source]').forEach(button => button.addEventListener('click
   }
 }));
 
-function setReportStep(step) {
-  const map = { context: "#reportStepContext", write: "#reportStepWrite", preview: "#reportStepPreview" };
-  Object.entries(map).forEach(([name, selector]) => {
-    const el = $(selector);
-    if (el) el.hidden = name !== step;
-    el?.classList.toggle("active", name === step);
-  });
-  $$("[data-report-step]").forEach(button => { const active=button.dataset.reportStep===step; button.classList.toggle("active",active); button.setAttribute("aria-selected",active?"true":"false"); });
-  if (step === "preview" && currentContinuityData) renderTeacherReportPreview(currentContinuityData, true);
-  window.scrollTo({top:0,behavior:"smooth"});
-}
-$$("[data-report-step]").forEach(button => button.addEventListener("click", () => setReportStep(button.dataset.reportStep)));
-$$("[data-go-report-step]").forEach(button => button.addEventListener("click", () => setReportStep(button.dataset.goReportStep)));
 
 $$("[data-family-admin-tab]").forEach(button => button.addEventListener("click", () => {
   const tab = button.dataset.familyAdminTab;
@@ -985,7 +972,6 @@ function enableAdminTabKeyboard(selector, activate){
 }
 enableAdminTabKeyboard('[data-person-tab]',tab=>setPersonDetailTab(tab.dataset.personTab));
 enableAdminTabKeyboard('[data-observation-source]',tab=>tab.click());
-enableAdminTabKeyboard('[data-report-step]',tab=>setReportStep(tab.dataset.reportStep));
 enableAdminTabKeyboard('[data-family-admin-tab]',tab=>tab.click());
 
 window.openPerson = async personId => {
@@ -1892,16 +1878,16 @@ function continuityFields() {
 
 function normalizePreviewText(v){return String(v||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");}
 const previewProfileAreas=[
-  {key:"instructions",label:"Comprensión de instrucciones",icon:"↳"},
-  {key:"attention",label:"Atención y enfoque",icon:"◎"},
-  {key:"participation",label:"Participación",icon:"◌"},
-  {key:"organization",label:"Organización",icon:"▦"},
-  {key:"autonomy",label:"Autonomía",icon:"◇"},
-  {key:"emotional",label:"Regulación emocional",icon:"≈"},
-  {key:"motivation",label:"Motivación escolar",icon:"✦"},
-  {key:"social",label:"Convivencia social",icon:"☍"},
-  {key:"communication",label:"Comunicación y expresión",icon:"◔"},
-  {key:"frustration",label:"Tolerancia a la frustración",icon:"△"}
+  {key:"instructions",label:"Comprensión de instrucciones",short:"Instrucciones",icon:"↳"},
+  {key:"attention",label:"Atención y enfoque",short:"Atención",icon:"◎"},
+  {key:"participation",label:"Participación",short:"Participación",icon:"◌"},
+  {key:"organization",label:"Organización",short:"Organización",icon:"▦"},
+  {key:"autonomy",label:"Autonomía",short:"Autonomía",icon:"◇"},
+  {key:"emotional",label:"Regulación emocional",short:"Reg. emocional",icon:"≈"},
+  {key:"motivation",label:"Motivación escolar",short:"Motivación",icon:"✦"},
+  {key:"social",label:"Convivencia social",short:"Convivencia",icon:"☍"},
+  {key:"communication",label:"Comunicación y expresión",short:"Comunicación",icon:"◔"},
+  {key:"frustration",label:"Tolerancia a la frustración",short:"Frustración",icon:"△"}
 ];
 function previewReportText(c={}){return normalizePreviewText([c.general_description,c.strengths,c.support_needs,c.strategies,c.watch_items].filter(Boolean).join(" "));}
 function previewTextSignals(c={}, area){
@@ -1944,8 +1930,14 @@ function adminPreviewProfileAreas(snapshot={},c={}){
   const states=previewProfileAreas.map(a=>({area:a,...previewProfileAreaState(snapshot,c,a.key)}));
   return `<div class="student-profile-map student-profile-map-10 preview-profile-map"><div class="profile-map-center"><span>PERFIL INTEGRAL</span><strong>Seguimiento escolar</strong><small>Lectura visual para orientar el acompañamiento escolar y socioemocional</small></div>${states.map((item,i)=>`<article class="profile-node profile-node-${i+1} ${item.tone}"><i>${item.area.icon}</i><div><strong>${escapeHTML(item.area.label)}</strong><span>${escapeHTML(item.label)}</span><small>${escapeHTML(item.detail)}</small></div></article>`).join("")}</div><div class="profile-map-legend"><span><i class="dot strength"></i>Fortaleza observada</span><span><i class="dot developing"></i>En desarrollo</span><span><i class="dot support"></i>Requiere apoyo</span><span><i class="dot unknown"></i>Sin información suficiente</span></div>`;
 }
+function adminPreviewRadarInterpretation(snapshot={},c={}){
+  const states=previewProfileAreas.map(a=>({label:a.label,...previewProfileAreaState(snapshot,c,a.key)}));
+  const support=states.filter(x=>x.tone==="support").map(x=>x.label).slice(0,2);
+  const strengths=states.filter(x=>x.tone==="strength").map(x=>x.label).slice(0,1);
+  return `<div class="radar-explainer preview-radar-explainer"><div class="radar-reading"><strong>¿Cómo leerlo?</strong><p>Más cerca del borde significa mayor consolidación observada. En ejes con información, más cerca del centro indica mayor necesidad de acompañamiento. Los ejes en gris significan que todavía no hay evidencia suficiente.</p></div><div class="radar-insights"><article><span>Prioridades</span><p>${escapeHTML(support.length?support.join(', '):'Sin prioridades altas por ahora')}</p></article><article><span>Favorecidas</span><p>${escapeHTML(strengths.length?strengths.join(', '):'En desarrollo')}</p></article></div></div>`;
+}
 function adminPreviewRadar(snapshot={},c={}){
-  const areas=previewProfileAreas.map(a=>({label:a.label,state:previewProfileAreaState(snapshot,c,a.key)}));
+  const areas=previewProfileAreas.map(a=>({label:a.label,short:a.short||a.label,state:previewProfileAreaState(snapshot,c,a.key)}));
   const values=areas.map(a=>previewScoreFromState(a.state));
   const activeCount=values.filter(v=>v>0).length;
   if(!activeCount)return `<div class="radar-empty preview-evolution-empty"><strong>Panorama inicial</strong><span>Todavía no hay suficiente información para construir un perfil gráfico más completo.</span></div>`;
@@ -1954,11 +1946,11 @@ function adminPreviewRadar(snapshot={},c={}){
   const point=(index,value)=>{const angle=-Math.PI/2 + index*angleStep;const radius=maxR*(value/levels);const x=cx + Math.cos(angle)*radius;const y=cy + Math.sin(angle)*radius;return `${x.toFixed(1)},${y.toFixed(1)}`;};
   const axisPoint=(index,radius)=>{const angle=-Math.PI/2 + index*angleStep;return {x:cx + Math.cos(angle)*radius,y:cy + Math.sin(angle)*radius};};
   const rings=Array.from({length:levels},(_,i)=>{const radius=maxR*((i+1)/levels);const pts=areas.map((_,idx)=>{const p=axisPoint(idx,radius);return `${p.x.toFixed(1)},${p.y.toFixed(1)}`;}).join(" ");return `<polygon points="${pts}" fill="none" stroke="rgba(148,163,184,.12)" stroke-width="1"/>`;}).join("");
-  const axes=areas.map((_,idx)=>{const p=axisPoint(idx,maxR);return `<line x1="${cx}" y1="${cy}" x2="${p.x.toFixed(1)}" y2="${p.y.toFixed(1)}" stroke="rgba(148,163,184,.12)" stroke-width="1"/>`;}).join("");
-  const labels=areas.map((a,idx)=>{const p=axisPoint(idx,maxR+22);return `<text x="${p.x.toFixed(1)}" y="${p.y.toFixed(1)}" text-anchor="middle">${escapeHTML(a.label)}</text>`;}).join("");
+  const axes=areas.map((_,idx)=>{const p=axisPoint(idx,maxR);return `<line x1="${cx}" y1="${cy}" x2="${p.x.toFixed(1)}" y2="${p.y.toFixed(1)}" stroke="rgba(148,163,184,.11)" stroke-width="1"/>`;}).join("");
+  const labels=areas.map((a,idx)=>{const p=axisPoint(idx,maxR+22);return `<text class="radar-label ${a.state.tone}" x="${p.x.toFixed(1)}" y="${p.y.toFixed(1)}" text-anchor="middle">${escapeHTML(a.short)}</text>`;}).join("");
   const areaPolygon=areas.map((_,idx)=>point(idx,values[idx])).join(" ");
-  const dots=areas.map((_,idx)=>{const [x,y]=point(idx,values[idx]).split(',');return `<circle cx="${x}" cy="${y}" r="3.5" fill="#38BDF8"/>`;}).join("");
-  return `<div class="radar-wrap preview-radar-wrap"><svg class="radar-svg preview-radar-svg" viewBox="0 0 ${size} 290" role="img" aria-label="Panorama general de observación"><g>${rings}${axes}<polygon class="radar-area" points="${areaPolygon}"/><g class="radar-dots">${dots}</g>${labels}</g></svg><small class="evolution-note">Lectura general por áreas escolares y socioemocionales.</small></div>`;
+  const dots=areas.map((_,idx)=>{const [x,y]=point(idx,values[idx]).split(',');return `<circle cx="${x}" cy="${y}" r="3.5" fill="#38BDF8" stroke="rgba(255,255,255,.35)" stroke-width="1"/>`;}).join("");
+  return `<div class="radar-wrap preview-radar-wrap"><div class="radar-shell"><svg class="radar-svg preview-radar-svg" viewBox="0 0 ${size} 290" role="img" aria-label="Panorama general de observación"><defs><linearGradient id="radarFillPreview" x1="0" x2="1" y1="0" y2="1"><stop offset="0%" stop-color="rgba(56,189,248,.35)"/><stop offset="100%" stop-color="rgba(20,184,166,.16)"/></linearGradient></defs><g>${rings}${axes}<polygon class="radar-area" points="${areaPolygon}" fill="url(#radarFillPreview)"/><g class="radar-dots">${dots}</g>${labels}</g></svg></div><div class="radar-scale"><span>Centro = más apoyo*</span><span>Borde = más consolidación</span></div>${adminPreviewRadarInterpretation(snapshot,c)}<small class="evolution-note">Lectura general por áreas escolares y socioemocionales.</small></div>`;
 }
 
 function renderTeacherReportPreview(data, useCurrentFields = false) {

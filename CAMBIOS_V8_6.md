@@ -64,3 +64,17 @@ Aplicar `migration-v8.6.sql` en D1 antes o junto con el despliegue. El Worker ta
 - Se reemplazó la sección de evolución por **Panorama general de observación** con gráfica tipo radar/telaraña.
 - Se ampliaron las áreas del perfil a 10 dimensiones escolares y socioemocionales: comprensión de instrucciones, atención y enfoque, participación, organización, autonomía, regulación emocional, motivación escolar, convivencia social, comunicación y expresión, y tolerancia a la frustración.
 - Se rediseñó la vista del docente y la vista previa de Alex para mostrar un mapa visual más rico y un radar descriptivo.
+
+
+## Ajuste visual posterior (03-oct-2026 · Radar elegante)
+- Se refinó visualmente el radar del bloque "Panorama general de observación" para hacerlo más elegante y legible.
+- Se agregó una explicación tipo "¿Cómo leerlo?" y tarjetas de interpretación con áreas prioritarias y áreas más favorables.
+- Se corrigieron los traslapes del mapa del perfil integral, especialmente en la zona de tolerancia a la frustración.
+
+## V8.6.6 — revisión final antes de carga
+- Corrección funcional: el cuadro de notas libres de Alex ahora puede ser la única fuente necesaria para solicitar un borrador a IA.
+- Eliminación definitiva del código residual del antiguo flujo de tres pasos.
+- Perfil integral migrado a layout CSS Grid para evitar traslapes en distintos tamaños de pantalla.
+- Radar refinado con etiquetas cortas, estados visuales e interpretación explícita.
+- Se aclara que ejes grises significan falta de evidencia y no deben interpretarse como dificultad.
+- Validación final de sintaxis JS, IDs HTML y estructura CSS.

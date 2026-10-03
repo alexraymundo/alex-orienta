@@ -2455,11 +2455,12 @@ Nunca tienes acceso a las notas privadas de Alex.
     ]);
 
     if (!person) return json({ error: "Alumno no encontrado." }, 404);
-    if (!Number(snapshot?.observation_count || 0)) {
-      return json({ error: "Necesitas al menos una observación profesional publicada o un comentario docente que hayas decidido integrar al expediente." }, 400);
+    const structuredEvidenceCount = Number(snapshot?.observation_count || 0);
+    if (!structuredEvidenceCount && !alexNotes) {
+      return json({ error: "Escribe una observación en el cuadro de texto o registra al menos una observación profesional/comentario docente integrado antes de generar el borrador." }, 400);
     }
 
-    const evidenceCount = Number(snapshot.observation_count || 0);
+    const evidenceCount = structuredEvidenceCount + (alexNotes ? 1 : 0);
     const evidenceLabel = evidenceCount <= 2 ? "Datos iniciales" : evidenceCount <= 5 ? "Patrón emergente" : "Mayor consistencia";
     const reviewNote = evidenceCount <= 2
       ? `Borrador basado en ${evidenceCount} registro${evidenceCount===1?'':'s'}. No representa una tendencia y debe verificarse con nuevas observaciones.`

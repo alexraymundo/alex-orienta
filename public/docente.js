@@ -52,16 +52,16 @@ const teacherAreaLabels={
 };
 const trendFieldMap={attention:"attention_support",instructions:"instructions_support",organization:"organization_support",participation:"peer_support",emotional:"frustration_support",autonomy:"autonomy_support",social:"peer_support",frustration:"frustration_support"};
 const visualProfileAreas=[
-  {key:"instructions",label:"Comprensión de instrucciones",icon:"↳"},
-  {key:"attention",label:"Atención y enfoque",icon:"◎"},
-  {key:"participation",label:"Participación",icon:"◌"},
-  {key:"organization",label:"Organización",icon:"▦"},
-  {key:"autonomy",label:"Autonomía",icon:"◇"},
-  {key:"emotional",label:"Regulación emocional",icon:"≈"},
-  {key:"motivation",label:"Motivación escolar",icon:"✦"},
-  {key:"social",label:"Convivencia social",icon:"☍"},
-  {key:"communication",label:"Comunicación y expresión",icon:"◔"},
-  {key:"frustration",label:"Tolerancia a la frustración",icon:"△"}
+  {key:"instructions",label:"Comprensión de instrucciones",short:"Instrucciones",icon:"↳"},
+  {key:"attention",label:"Atención y enfoque",short:"Atención",icon:"◎"},
+  {key:"participation",label:"Participación",short:"Participación",icon:"◌"},
+  {key:"organization",label:"Organización",short:"Organización",icon:"▦"},
+  {key:"autonomy",label:"Autonomía",short:"Autonomía",icon:"◇"},
+  {key:"emotional",label:"Regulación emocional",short:"Reg. emocional",icon:"≈"},
+  {key:"motivation",label:"Motivación escolar",short:"Motivación",icon:"✦"},
+  {key:"social",label:"Convivencia social",short:"Convivencia",icon:"☍"},
+  {key:"communication",label:"Comunicación y expresión",short:"Comunicación",icon:"◔"},
+  {key:"frustration",label:"Tolerancia a la frustración",short:"Frustración",icon:"△"}
 ];
 function normalizeText(v){return String(v||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");}
 function reportText(c={}){return normalizeText([c.general_description,c.strengths,c.support_needs,c.strategies,c.watch_items].filter(Boolean).join(" "));}
@@ -105,8 +105,17 @@ function profileMap(snapshot,c={}){
   const states=visualProfileAreas.map(a=>({area:a,...profileAreaState(snapshot,c,a.key)}));
   return `<div class="student-profile-map student-profile-map-10"><div class="profile-map-center"><span>PERFIL INTEGRAL</span><strong>Seguimiento escolar</strong><small>Lectura visual para orientar el acompañamiento escolar y socioemocional</small></div>${states.map((item,i)=>`<article class="profile-node profile-node-${i+1} ${item.tone}"><i>${item.area.icon}</i><div><strong>${esc(item.area.label)}</strong><span>${esc(item.label)}</span><small>${esc(item.detail)}</small></div></article>`).join("")}</div><div class="profile-map-legend"><span><i class="dot strength"></i>Fortaleza observada</span><span><i class="dot developing"></i>En desarrollo</span><span><i class="dot support"></i>Requiere apoyo</span><span><i class="dot unknown"></i>Sin información suficiente</span></div>`;
 }
+function radarInterpretation(snapshot,c={}){
+  const states=visualProfileAreas.map(a=>({label:a.label,...profileAreaState(snapshot,c,a.key)}));
+  const support=states.filter(x=>x.tone==="support").map(x=>x.label).slice(0,3);
+  const strengths=states.filter(x=>x.tone==="strength").map(x=>x.label).slice(0,2);
+  const developing=states.filter(x=>x.tone==="developing").map(x=>x.label).slice(0,2);
+  const supportText=support.length?support.join(', '):'No hay áreas marcadas actualmente como prioridad alta';
+  const strengthText=strengths.length?strengths.join(', '):(developing.length?developing.join(', '):'Aún sin fortalezas claramente identificadas');
+  return `<div class="radar-explainer"><div class="radar-reading"><strong>¿Cómo leerlo?</strong><p>Mientras más se extiende la figura hacia el borde, mayor consolidación observada hay en esa área. En los ejes con información, una posición más cercana al centro indica mayor necesidad de acompañamiento. Los nombres en gris significan que todavía no hay evidencia suficiente y no deben interpretarse como una dificultad.</p></div><div class="radar-insights"><article><span>Áreas prioritarias hoy</span><p>${esc(supportText)}</p></article><article><span>Áreas más favorables</span><p>${esc(strengthText)}</p></article></div></div>`;
+}
 function radarVisual(snapshot,c={}){
-  const areas=visualProfileAreas.map(a=>({label:a.label,state:profileAreaState(snapshot,c,a.key)}));
+  const areas=visualProfileAreas.map(a=>({label:a.label,short:a.short||a.label,state:profileAreaState(snapshot,c,a.key)}));
   const values=areas.map(a=>profileScoreFromState(a.state));
   const activeCount=values.filter(v=>v>0).length;
   if(!activeCount){
@@ -128,13 +137,13 @@ function radarVisual(snapshot,c={}){
   const rings=Array.from({length:levels},(_,i)=>{
     const radius=maxR*((i+1)/levels);
     const pts=areas.map((_,idx)=>{const p=axisPoint(idx,radius);return `${p.x.toFixed(1)},${p.y.toFixed(1)}`;}).join(" ");
-    return `<polygon points="${pts}" fill="none" stroke="rgba(148,163,184,.12)" stroke-width="1"/>`;
+    return `<polygon points="${pts}" fill="none" stroke="rgba(148,163,184,.13)" stroke-width="1"/>`;
   }).join("");
-  const axes=areas.map((_,idx)=>{const p=axisPoint(idx,maxR);return `<line x1="${cx}" y1="${cy}" x2="${p.x.toFixed(1)}" y2="${p.y.toFixed(1)}" stroke="rgba(148,163,184,.12)" stroke-width="1"/>`;}).join("");
-  const labels=areas.map((a,idx)=>{const p=axisPoint(idx,maxR+25);return `<text x="${p.x.toFixed(1)}" y="${p.y.toFixed(1)}" text-anchor="middle">${esc(a.label)}</text>`;}).join("");
+  const axes=areas.map((_,idx)=>{const p=axisPoint(idx,maxR);return `<line x1="${cx}" y1="${cy}" x2="${p.x.toFixed(1)}" y2="${p.y.toFixed(1)}" stroke="rgba(148,163,184,.10)" stroke-width="1"/>`;}).join("");
+  const labels=areas.map((a,idx)=>{const p=axisPoint(idx,maxR+25);return `<text class="radar-label ${a.state.tone}" x="${p.x.toFixed(1)}" y="${p.y.toFixed(1)}" text-anchor="middle">${esc(a.short)}</text>`;}).join("");
   const areaPolygon=areas.map((_,idx)=>point(idx,values[idx])).join(" ");
-  const dots=areas.map((_,idx)=>{const [x,y]=point(idx,values[idx]).split(',');return `<circle cx="${x}" cy="${y}" r="4" fill="#38BDF8"/>`;}).join("");
-  return `<div class="radar-wrap"><svg class="radar-svg" viewBox="0 0 ${size} 330" role="img" aria-label="Panorama general de observación"><g>${rings}${axes}<polygon class="radar-area" points="${areaPolygon}"/><g class="radar-dots">${dots}</g>${labels}</g></svg><div class="radar-legend"><span><i class="radar-swatch radar-swatch-1"></i>Requiere apoyo</span><span><i class="radar-swatch radar-swatch-2"></i>En desarrollo</span><span><i class="radar-swatch radar-swatch-3"></i>Fortaleza observada</span></div><small class="evolution-note">Lectura general por áreas escolares y socioemocionales. Es una visualización descriptiva, no una calificación.</small></div>`;
+  const dots=areas.map((_,idx)=>{const [x,y]=point(idx,values[idx]).split(',');return `<circle cx="${x}" cy="${y}" r="4.5" fill="#38BDF8" stroke="rgba(255,255,255,.35)" stroke-width="1"/>`;}).join("");
+  return `<div class="radar-wrap"><div class="radar-shell"><svg class="radar-svg" viewBox="0 0 ${size} 330" role="img" aria-label="Panorama general de observación"><defs><linearGradient id="radarFillTeacher" x1="0" x2="1" y1="0" y2="1"><stop offset="0%" stop-color="rgba(56,189,248,.35)"/><stop offset="100%" stop-color="rgba(20,184,166,.16)"/></linearGradient></defs><g>${rings}${axes}<polygon class="radar-area" points="${areaPolygon}" fill="url(#radarFillTeacher)"/><g class="radar-dots">${dots}</g>${labels}</g></svg></div><div class="radar-scale"><span>Centro = mayor acompañamiento*</span><span>Borde = mayor consolidación</span></div><div class="radar-legend"><span><i class="radar-swatch radar-swatch-1"></i>Requiere apoyo</span><span><i class="radar-swatch radar-swatch-2"></i>En desarrollo</span><span><i class="radar-swatch radar-swatch-3"></i>Fortaleza observada</span></div>${radarInterpretation(snapshot,c)}<small class="evolution-note">Lectura general por áreas escolares y socioemocionales. Es una visualización descriptiva, no una calificación.</small></div>`;
 }
 
 function transferReceivedHtml(transfer){
