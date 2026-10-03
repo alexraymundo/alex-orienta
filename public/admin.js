@@ -1726,15 +1726,35 @@ function observedAreaEntries(snapshot) {
     .map(([key,label]) => ({ key, label, data:snapshot?.distribution?.[key] || {} }))
     .filter(item => Number(item.data?.n || 0) > 0);
 }
-function renderInitialAreaChips(snapshot, compact=false) {
+
+function inferredAreasFromContinuity(c={}) {
+  const text = [c.general_description,c.strengths,c.support_needs,c.strategies,c.watch_items].filter(Boolean).join(" ").toLowerCase();
+  const rules = [
+    ["instructions","Seguimiento de instrucciones",/(instrucci|indicacion|consigna|comprensi[oó]n)/],
+    ["attention","Atención",/(atenci[oó]n|concentr|enfoc|distracci)/],
+    ["organization","Organización",/(organiz|planific|material|tarea|secuencia)/],
+    ["peers","Interacción con pares",/(pares|compa[nñ]er|equipo|grupo|convivencia)/],
+    ["frustration","Manejo de frustración",/(frustra|enojo|molest|tolerancia|regulaci[oó]n)/],
+    ["transitions","Cambios / transiciones",/(transici[oó]n|cambio de actividad|cambiar de actividad)/],
+    ["autonomy","Autonomía",/(autonom|independ|por s[ií] mismo|trabajo individual)/],
+    ["help_seeking","Solicitud de ayuda",/(pedir ayuda|solicitar ayuda|buscar apoyo|requiere apoyo|necesita apoyo|orientaci[oó]n)/]
+  ];
+  return rules.filter(([, ,rx])=>rx.test(text)).map(([key,label])=>({key,label}));
+}
+
+function renderInitialAreaChips(snapshot, compact=false, continuity={}) {
   const items = observedAreaEntries(snapshot);
-  if (!items.length) return `<p class="muted">Todavía no hay áreas observadas registradas.</p>`;
+  if (!items.length) {
+    const inferred = inferredAreasFromContinuity(continuity);
+    if (!inferred.length) return `<p class="muted">Todavía no hay áreas observadas identificadas.</p>`;
+    return `<div class="initial-evidence-note"><strong>Áreas identificadas en el registro</strong><span>La IA las identificó a partir del contenido del informe. No representan una tendencia ni una puntuación.</span></div><div class="observed-area-chips ${compact?"compact":""}">${inferred.map(item=>`<span><b>${escapeHTML(item.label)}</b><small>Identificada en el borrador</small></span>`).join("")}</div>`;
+  }
   return `<div class="initial-evidence-note"><strong>Datos iniciales</strong><span>Hay pocos registros para mostrar una tendencia confiable. Por ahora se muestran únicamente las áreas que ya fueron observadas.</span></div><div class="observed-area-chips ${compact?"compact":""}">${items.map(item=>`<span><b>${escapeHTML(item.label)}</b><small>${Number(item.data.n)} registro${Number(item.data.n)===1?"":"s"}</small></span>`).join("")}</div>`;
 }
-function renderSupportBars(snapshot, compact=false) {
+function renderSupportBars(snapshot, compact=false, continuity={}) {
   const stable = observedAreaEntries(snapshot).filter(item => Number(item.data?.n || 0) >= 3);
   const initial = observedAreaEntries(snapshot).filter(item => Number(item.data?.n || 0) < 3);
-  if (!stable.length) return renderInitialAreaChips(snapshot, compact);
+  if (!stable.length) return renderInitialAreaChips(snapshot, compact, continuity);
   const rows = stable.map(item => {
     const pct = Number(item.data.higher_support_pct || 0);
     return `<div class="${compact?"preview-support-row":"support-row enhanced"}"><div><strong>${escapeHTML(item.label)}</strong><small>${supportFrequencyText(item.data)}</small></div><div class="${compact?"preview-bar":"support-track"}"><i style="width:${pct}%"></i></div><b>${pct}%</b></div>`;
@@ -1883,14 +1903,14 @@ function renderTeacherReportPreview(data, useCurrentFields = false) {
   const top = topSupportArea(s);
   const topContext = (s.contexts || [])[0];
 
-  const bars = renderSupportBars(s, true);
+  const bars = renderSupportBars(s, true, c);
   const contexts = renderContextSummary(s, true);
 
   const sections = [
     ["Descripción general", c.general_description],
     ["Fortalezas observadas", c.strengths],
     ["Puede requerir apoyo en", c.support_needs],
-    ["Estrategias que han funcionado", c.strategies],
+    ["Estrategias de apoyo recomendadas", c.strategies],
     ["Aspectos a seguir observando", c.watch_items]
   ].map(([title,text]) => `<article><span>${escapeHTML(title)}</span><p>${escapeHTML(text || "Pendiente de completar.")}</p></article>`).join("");
 

@@ -41,3 +41,10 @@ Aplicar `migration-v8.6.sql` en D1 antes o junto con el despliegue. El Worker ta
 - La IA ahora usa tanto la evidencia escolar autorizada como las notas libres de Alex para proponer el informe.
 - Se sustituyó el checkbox de publicación por dos acciones directas: Guardar borrador y Publicar informe.
 - Se dejó vista previa del docente dentro de la misma pantalla de edición.
+
+
+## Ajuste v8.6.2 (03-oct-2026)
+- “Estrategias que han funcionado” cambia a “Estrategias de apoyo recomendadas”.
+- La IA no debe afirmar que una estrategia funcionó salvo que exista evidencia expresa.
+- Si no existen áreas estructuradas marcadas, NORTIA identifica áreas cualitativas a partir del contenido del informe y las muestra como “Áreas identificadas en el registro”.
+- Estas áreas cualitativas no generan porcentajes, scores ni tendencias; solo indican temas presentes en el contenido publicado.

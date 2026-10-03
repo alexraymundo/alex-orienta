@@ -2505,7 +2505,7 @@ RESPONDE EXCLUSIVAMENTE CON ESTAS 5 ETIQUETAS, SIN JSON, SIN MARKDOWN Y SIN TEXT
 <general_description>máximo 90 palabras</general_description>
 <strengths>máximo 70 palabras; si no hay evidencia suficiente, indícalo con prudencia</strengths>
 <support_needs>máximo 80 palabras</support_needs>
-<strategies>3 a 5 sugerencias prácticas, una por línea</strategies>
+<strategies>3 a 5 estrategias de apoyo recomendadas para probar con el alumno, una por línea. No afirmes que ya funcionaron salvo que la evidencia lo indique expresamente.</strategies>
 <watch_items>3 a 5 aspectos concretos para seguir observando, uno por línea</watch_items>
 `.trim();
 
