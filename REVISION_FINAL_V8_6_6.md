@@ -18,3 +18,7 @@ Revisión realizada antes de entrega:
 - Se conservó migration-v8.6.sql para included_in_record.
 
 Nota: el radar es una visualización descriptiva de información observada, no una medición clínica ni una calificación.
+
+## Corrección V8.6.7
+- Se corrigió la interpretación del radar: Prioridades y Favorecidas ahora muestran nombres de áreas y no etiquetas de estado repetidas.
+- Se corrigió tanto la vista del docente como la vista previa de Alex.

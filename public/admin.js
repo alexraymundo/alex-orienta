@@ -1931,10 +1931,11 @@ function adminPreviewProfileAreas(snapshot={},c={}){
   return `<div class="student-profile-map student-profile-map-10 preview-profile-map"><div class="profile-map-center"><span>PERFIL INTEGRAL</span><strong>Seguimiento escolar</strong><small>Lectura visual para orientar el acompañamiento escolar y socioemocional</small></div>${states.map((item,i)=>`<article class="profile-node profile-node-${i+1} ${item.tone}"><i>${item.area.icon}</i><div><strong>${escapeHTML(item.area.label)}</strong><span>${escapeHTML(item.label)}</span><small>${escapeHTML(item.detail)}</small></div></article>`).join("")}</div><div class="profile-map-legend"><span><i class="dot strength"></i>Fortaleza observada</span><span><i class="dot developing"></i>En desarrollo</span><span><i class="dot support"></i>Requiere apoyo</span><span><i class="dot unknown"></i>Sin información suficiente</span></div>`;
 }
 function adminPreviewRadarInterpretation(snapshot={},c={}){
-  const states=previewProfileAreas.map(a=>({label:a.label,...previewProfileAreaState(snapshot,c,a.key)}));
-  const support=states.filter(x=>x.tone==="support").map(x=>x.label).slice(0,2);
-  const strengths=states.filter(x=>x.tone==="strength").map(x=>x.label).slice(0,1);
-  return `<div class="radar-explainer preview-radar-explainer"><div class="radar-reading"><strong>¿Cómo leerlo?</strong><p>Más cerca del borde significa mayor consolidación observada. En ejes con información, más cerca del centro indica mayor necesidad de acompañamiento. Los ejes en gris significan que todavía no hay evidencia suficiente.</p></div><div class="radar-insights"><article><span>Prioridades</span><p>${escapeHTML(support.length?support.join(', '):'Sin prioridades altas por ahora')}</p></article><article><span>Favorecidas</span><p>${escapeHTML(strengths.length?strengths.join(', '):'En desarrollo')}</p></article></div></div>`;
+  const states=previewProfileAreas.map(a=>({areaLabel:a.label,state:previewProfileAreaState(snapshot,c,a.key)}));
+  const support=states.filter(x=>x.state.tone==="support").map(x=>x.areaLabel).slice(0,3);
+  const strengths=states.filter(x=>x.state.tone==="strength").map(x=>x.areaLabel).slice(0,2);
+  const developing=states.filter(x=>x.state.tone==="developing").map(x=>x.areaLabel).slice(0,2);
+  return `<div class="radar-explainer preview-radar-explainer"><div class="radar-reading"><strong>¿Cómo leerlo?</strong><p>Más cerca del borde significa mayor consolidación observada. En ejes con información, más cerca del centro indica mayor necesidad de acompañamiento. Los ejes en gris significan que todavía no hay evidencia suficiente.</p></div><div class="radar-insights"><article><span>Prioridades</span><p>${escapeHTML(support.length?support.join(', '):'Sin prioridades altas por ahora')}</p></article><article><span>Favorecidas</span><p>${escapeHTML(strengths.length?strengths.join(', '):(developing.length?developing.join(', '):'Aún no hay áreas favorecidas con información suficiente'))}</p></article></div></div>`;
 }
 function adminPreviewRadar(snapshot={},c={}){
   const areas=previewProfileAreas.map(a=>({label:a.label,short:a.short||a.label,state:previewProfileAreaState(snapshot,c,a.key)}));

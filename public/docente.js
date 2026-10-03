@@ -106,10 +106,10 @@ function profileMap(snapshot,c={}){
   return `<div class="student-profile-map student-profile-map-10"><div class="profile-map-center"><span>PERFIL INTEGRAL</span><strong>Seguimiento escolar</strong><small>Lectura visual para orientar el acompañamiento escolar y socioemocional</small></div>${states.map((item,i)=>`<article class="profile-node profile-node-${i+1} ${item.tone}"><i>${item.area.icon}</i><div><strong>${esc(item.area.label)}</strong><span>${esc(item.label)}</span><small>${esc(item.detail)}</small></div></article>`).join("")}</div><div class="profile-map-legend"><span><i class="dot strength"></i>Fortaleza observada</span><span><i class="dot developing"></i>En desarrollo</span><span><i class="dot support"></i>Requiere apoyo</span><span><i class="dot unknown"></i>Sin información suficiente</span></div>`;
 }
 function radarInterpretation(snapshot,c={}){
-  const states=visualProfileAreas.map(a=>({label:a.label,...profileAreaState(snapshot,c,a.key)}));
-  const support=states.filter(x=>x.tone==="support").map(x=>x.label).slice(0,3);
-  const strengths=states.filter(x=>x.tone==="strength").map(x=>x.label).slice(0,2);
-  const developing=states.filter(x=>x.tone==="developing").map(x=>x.label).slice(0,2);
+  const states=visualProfileAreas.map(a=>({areaLabel:a.label,state:profileAreaState(snapshot,c,a.key)}));
+  const support=states.filter(x=>x.state.tone==="support").map(x=>x.areaLabel).slice(0,3);
+  const strengths=states.filter(x=>x.state.tone==="strength").map(x=>x.areaLabel).slice(0,2);
+  const developing=states.filter(x=>x.state.tone==="developing").map(x=>x.areaLabel).slice(0,2);
   const supportText=support.length?support.join(', '):'No hay áreas marcadas actualmente como prioridad alta';
   const strengthText=strengths.length?strengths.join(', '):(developing.length?developing.join(', '):'Aún sin fortalezas claramente identificadas');
   return `<div class="radar-explainer"><div class="radar-reading"><strong>¿Cómo leerlo?</strong><p>Mientras más se extiende la figura hacia el borde, mayor consolidación observada hay en esa área. En los ejes con información, una posición más cercana al centro indica mayor necesidad de acompañamiento. Los nombres en gris significan que todavía no hay evidencia suficiente y no deben interpretarse como una dificultad.</p></div><div class="radar-insights"><article><span>Áreas prioritarias hoy</span><p>${esc(supportText)}</p></article><article><span>Áreas más favorables</span><p>${esc(strengthText)}</p></article></div></div>`;
