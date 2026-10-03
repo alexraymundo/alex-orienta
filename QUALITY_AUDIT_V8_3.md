@@ -1,6 +1,6 @@
-# NORTIA V8.3.1 — Auditoría final de calidad, diseño y experiencia
+# RAUDAL V8.3.1 — Auditoría final de calidad, diseño y experiencia
 
-Se revisó NORTIA desde cinco perspectivas: visitante público, usuario de Mi Espacio, familia, docente y administrador. También se revisaron consistencia visual, prevención de errores, accesibilidad, privacidad por rol, calidad de datos, escalabilidad y comportamiento móvil.
+Se revisó RAUDAL desde cinco perspectivas: visitante público, usuario de Mi Espacio, familia, docente y administrador. También se revisaron consistencia visual, prevención de errores, accesibilidad, privacidad por rol, calidad de datos, escalabilidad y comportamiento móvil.
 
 ## Hallazgos corregidos
 1. Mi práctica y CIDEB permanecen separados en navegación y selectores.
