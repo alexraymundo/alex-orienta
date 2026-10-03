@@ -599,7 +599,7 @@ textarea{resize:vertical}
 
 
 /* ==========================================================
-   RAUDAL v3 — authentication lock + AI diagnostics
+   NORTIA v3 — authentication lock + AI diagnostics
    ========================================================== */
 [hidden]{
   display:none !important;
@@ -679,7 +679,7 @@ textarea{resize:vertical}
 
 
 /* ==========================================================
-   RAUDAL v5 — Professional workspace + Mi Espacio
+   NORTIA v5 — Professional workspace + Mi Espacio
    ========================================================== */
 .professional-link{
   color:rgba(255,255,255,.48);
@@ -1304,7 +1304,7 @@ textarea{resize:vertical}
   }
 }
 
-/* RAUDAL v6 — Azul Profesional */
+/* NORTIA v6 — Azul Profesional */
 .brand-mark{background:linear-gradient(135deg,#0EA5E9 0%,#38BDF8 50%,#14B8A6 100%);color:#06111D;box-shadow:0 10px 28px rgba(14,165,233,.22)}
 .brand small{color:#7DD3FC}.primary-btn{background:linear-gradient(135deg,#0EA5E9,#14B8A6);box-shadow:0 10px 30px rgba(14,165,233,.18)}
 .ghost-btn,.secondary-btn{border-color:rgba(56,189,248,.24)}
@@ -1316,7 +1316,7 @@ textarea{resize:vertical}
 
 
 /* ==========================================================
-   RAUDAL v6.2 — Notifications
+   NORTIA v6.2 — Notifications
    ========================================================== */
 .notification-badge{
   display:inline-grid;
@@ -1475,7 +1475,7 @@ textarea{resize:vertical}
 
 
 /* ==========================================================
-   RAUDAL v7 — Continuidad Escolar + Familias
+   NORTIA v7 — Continuidad Escolar + Familias
    ========================================================== */
 .role-body{min-height:100vh;background:var(--bg)}
 .role-login,.agreement-screen{min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 20% 10%,rgba(56,189,248,.1),transparent 28%),var(--bg)}
@@ -1487,7 +1487,7 @@ textarea{resize:vertical}
 
 
 /* ==========================================================
-   RAUDAL v7.1 — Experiencia aplicada / CIDEB
+   NORTIA v7.1 — Experiencia aplicada / CIDEB
    ========================================================== */
 .context-badge{
   border-color:rgba(20,184,166,.32) !important;
@@ -1642,7 +1642,7 @@ textarea{resize:vertical}
 
 
 /* ==========================================================
-   RAUDAL v7.3 — Acceso CIDEB visible + hardening visual
+   NORTIA v7.3 — Acceso CIDEB visible + hardening visual
    ========================================================== */
 .cideb-access-menu{
   position:relative;
@@ -1805,7 +1805,7 @@ textarea{resize:vertical}
 
 
 /* ==========================================================
-   RAUDAL v7.4 — Espacio CIDEB + informes visuales
+   NORTIA v7.4 — Espacio CIDEB + informes visuales
    ========================================================== */
 .sidebar-section-label{
   margin:15px 13px 5px;
@@ -1849,7 +1849,7 @@ textarea{resize:vertical}
 
 
 /* ==========================================================
-   RAUDAL v7.5 — Directorio CIDEB escalable y limpio
+   NORTIA v7.5 — Directorio CIDEB escalable y limpio
    ========================================================== */
 .admin-header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px}
 .global-search-shell{position:relative;width:min(390px,38vw)}
@@ -1882,7 +1882,7 @@ textarea{resize:vertical}
 
 
 /* ==========================================================
-   RAUDAL v7.5.1 — Scroll estable + resumen CIDEB más compacto
+   NORTIA v7.5.1 — Scroll estable + resumen CIDEB más compacto
    ========================================================== */
 @media (min-width:981px){
   html,
@@ -1988,7 +1988,7 @@ textarea{resize:vertical}
 
 
 /* ==========================================================
-   RAUDAL V8 — Espacios limpios y flujos separados
+   NORTIA V8 — Espacios limpios y flujos separados
    ========================================================== */
 .workspace-switcher{display:grid;gap:8px;margin:22px 0 18px;padding:8px;border:1px solid var(--line);border-radius:18px;background:#071321}
 .workspace-choice{display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:center;width:100%;padding:10px;border:0;border-radius:13px;background:transparent;color:#7f91a8;text-align:left}
@@ -2015,7 +2015,7 @@ textarea{resize:vertical}
 
 
 /* ==========================================================
-   RAUDAL V8.1 — Final UX polish
+   NORTIA V8.1 — Final UX polish
    ========================================================== */
 .person-detail-tabs{display:flex;gap:4px;width:max-content;max-width:100%;margin:0 0 16px;padding:5px;border:1px solid var(--line);border-radius:14px;background:#071321;overflow:auto}
 .person-detail-tabs button{border:0;border-radius:10px;background:transparent;color:#7890aa;padding:9px 15px;white-space:nowrap;font-size:.68rem;font-weight:850}
@@ -2029,7 +2029,7 @@ textarea{resize:vertical}
 
 
 /* ==========================================================
-   RAUDAL V8.2 — Audit Fix: accesibilidad + seguridad visual
+   NORTIA V8.2 — Audit Fix: accesibilidad + seguridad visual
    ========================================================== */
 :where(a,button,input,textarea,select,summary,[tabindex]):focus-visible{
   outline:3px solid rgba(56,189,248,.72);
@@ -2082,7 +2082,7 @@ textarea{resize:vertical}
 
 
 /* ==========================================================
-   RAUDAL V8.3 — Quality & UX polish
+   NORTIA V8.3 — Quality & UX polish
    ========================================================== */
 .dashboard-action-stats .stat-action{appearance:none;width:100%;text-align:left;color:inherit;padding:18px;border-radius:18px;border:1px solid var(--line);background:var(--card);transition:border-color .16s ease,transform .16s ease,background .16s ease}
 .dashboard-action-stats .stat-action:hover{border-color:rgba(56,189,248,.3);background:#122139;transform:translateY(-1px)}
@@ -2097,7 +2097,7 @@ textarea{resize:vertical}
 
 
 /* ==========================================================
-   RAUDAL V8.3.1 — Final quality pass
+   NORTIA V8.3.1 — Final quality pass
    ========================================================== */
 /* Touch targets and predictable interaction hierarchy */
 :where(button,.primary-btn,.secondary-btn,.ghost-btn,.nav-btn){min-height:40px}
@@ -2136,7 +2136,7 @@ textarea{resize:vertical}
 .review-privacy-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}.review-privacy-fields label{margin:0;padding:11px;border:1px solid var(--line);border-radius:13px;background:#081421}.review-privacy-fields label>span{display:block;margin-bottom:7px;color:#7890aa;font-size:.68rem;font-weight:900;letter-spacing:.04em}.review-privacy-fields label:first-child{border-color:rgba(252,211,77,.14)}.review-privacy-fields label:first-child>span{color:#f3d98c}.review-privacy-fields textarea{margin:0;background:#06111e}@media(max-width:760px){.review-privacy-fields{grid-template-columns:1fr}}
 
 
-/* RAUDAL V8.3.1 — feedback no bloqueante */
+/* NORTIA V8.3.1 — feedback no bloqueante */
 .toast-region{position:fixed;right:18px;bottom:18px;z-index:3000;display:grid;gap:9px;width:min(390px,calc(100vw - 36px));pointer-events:none}
 .app-toast{transform:translateY(8px);opacity:0;padding:13px 15px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#101e32;color:#eaf2fb;box-shadow:0 18px 55px rgba(0,0,0,.36);font-size:.78rem;line-height:1.5;transition:opacity .16s ease,transform .16s ease}
 .app-toast.show{transform:none;opacity:1}.app-toast.success{border-color:rgba(134,239,172,.28)}.app-toast.error{border-color:rgba(253,164,175,.3)}.app-toast.info{border-color:rgba(56,189,248,.24)}
@@ -2144,7 +2144,7 @@ textarea{resize:vertical}
 
 
 /* ==========================================================
-   RAUDAL V8.3.2 — Observación profesional + sidebar estable
+   NORTIA V8.3.2 — Observación profesional + sidebar estable
    ========================================================== */
 @media (min-width:981px){
   .clean-workspace-sidebar{
@@ -2225,7 +2225,7 @@ textarea{resize:vertical}
 
 
 /* ==========================================================
-   RAUDAL v8.3.3 — Informe visual con evidencia progresiva
+   NORTIA v8.3.3 — Informe visual con evidencia progresiva
    ========================================================== */
 .initial-evidence-note{
   display:grid;
@@ -2285,7 +2285,7 @@ textarea{resize:vertical}
 
 
 /* ==========================================================
-   RAUDAL v8.4 — Coordinación CIDEB + transferencia docente
+   NORTIA v8.4 — Coordinación CIDEB + transferencia docente
    ========================================================== */
 .coordinator-main{
   width:min(1240px,calc(100% - 40px));
@@ -2477,7 +2477,7 @@ textarea{resize:vertical}
 
 
 /* ==========================================================
-   RAUDAL v8.5 — Borrador de continuidad asistido por IA
+   NORTIA v8.5 — Borrador de continuidad asistido por IA
    ========================================================== */
 .report-context-actions{
   display:flex;

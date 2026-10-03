@@ -188,8 +188,8 @@ function openAdminTab(tab) {
     security: "Seguridad",
     vocational: "Mapa vocacional",
     notifications: "Notificaciones",
-    ai: "RAUDAL Reflexión"
-  }[tab] || "RAUDAL";
+    ai: "NORTIA Reflexión"
+  }[tab] || "NORTIA";
 
   if (school) {
     loadInstitutionPreview();
@@ -540,7 +540,7 @@ async function exportCidebDirectory() {
     } catch {}
 
     downloadCsv(
-      `RAUDAL_CIDEB_${safeCycle}_${today}.csv`,
+      `NORTIA_CIDEB_${safeCycle}_${today}.csv`,
       rows
     );
   } catch (e) {
@@ -616,7 +616,7 @@ async function exportCidebStudent(id,name){
   try{
     const data=await api(`/api/admin/cideb/student/export?person_id=${encodeURIComponent(id)}`);
     const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json;charset=utf-8'});
-    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`RAUDAL_${String(name||'alumno').replace(/[^a-z0-9áéíóúñ_-]+/gi,'_')}.json`;a.click();URL.revokeObjectURL(a.href);
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`NORTIA_${String(name||'alumno').replace(/[^a-z0-9áéíóúñ_-]+/gi,'_')}.json`;a.click();URL.revokeObjectURL(a.href);
   }catch(e){adminToast(e.message,'error');}
 }
 window.exportCidebStudent=exportCidebStudent;
@@ -725,7 +725,7 @@ function renderEmailStatus(status) {
     box.innerHTML = `
       <strong>Falta activar el envío por correo</strong>
       <span>
-        Las notificaciones ya se guardan dentro de RAUDAL.
+        Las notificaciones ya se guardan dentro de NORTIA.
         Para enviarlas también a ${escapeHTML(status.recipient)},
         agrega el secret RESEND_API_KEY en Cloudflare.
       </span>
@@ -1126,7 +1126,7 @@ function renderClientAIHistory(items) {
   $("#clientAIHistory").innerHTML = items.length
     ? items.map(item => `
         <article class="client-ai-history ${item.role}">
-          <span>${item.role === "assistant" ? "RAUDAL Reflexión" : "Usuario"} · ${new Date(item.created_at).toLocaleString()}</span>
+          <span>${item.role === "assistant" ? "NORTIA Reflexión" : "Usuario"} · ${new Date(item.created_at).toLocaleString()}</span>
           <p>${escapeHTML(item.content)}</p>
           ${item.risk_flag ? `<b class="risk-flag">Requiere revisión humana</b>` : ""}
         </article>
@@ -1807,7 +1807,7 @@ async function generateContinuityAIDraft() {
   }
   const buttons = [$("#generateContinuityAIFromContextBtn"), $("#regenerateContinuityAI")].filter(Boolean);
   buttons.forEach(b => { b.disabled = true; b.dataset.oldText = b.textContent; b.textContent = "GENERANDO…"; });
-  if (status) { status.style.color = ""; status.textContent = "RAUDAL está organizando únicamente las observaciones escolares autorizadas…"; }
+  if (status) { status.style.color = ""; status.textContent = "NORTIA está organizando únicamente las observaciones escolares autorizadas…"; }
   try {
     const data = await api("/api/admin/school-continuity/ai-draft", {
       method: "POST",
@@ -1995,7 +1995,7 @@ async function loadDeploymentSecurityStatus(){
     ];
     box.innerHTML=checks.map(([ok,label,pending])=>`<article class="security-check ${ok?"ok":"warn"}"><span>${ok?"✓":"!"}</span><div><strong>${label}</strong><small>${ok?"Configurado":pending}</small></div></article>`).join("")+
       `<article class="security-check ${d.turnstile_misconfigured?"warn":d.turnstile_configured?"ok":"external"}"><span>${d.turnstile_misconfigured?"!":d.turnstile_configured?"✓":"○"}</span><div><strong>Protección anti-bot</strong><small>${d.turnstile_misconfigured?"Configuración incompleta: revisa las dos claves":d.turnstile_configured?"Turnstile activo":"Opcional · el formulario mantiene límite de solicitudes"}</small></div></article>`+
-      `<article class="security-check external"><span>↗</span><div><strong>MFA de Cloudflare y GitHub</strong><small>Se administra fuera de RAUDAL y no puede verificarse desde este panel.</small></div></article>`;
+      `<article class="security-check external"><span>↗</span><div><strong>MFA de Cloudflare y GitHub</strong><small>Se administra fuera de NORTIA y no puede verificarse desde este panel.</small></div></article>`;
   }catch(e){box.innerHTML=`<p class="muted">No fue posible revisar el estado: ${escapeHTML(e.message)}</p>`;}
 }
 
