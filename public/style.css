@@ -2977,3 +2977,105 @@ body{
   .school-demo-area-grid{grid-template-columns:1fr}
   .school-demo-radar{width:145px;height:145px}
 }
+
+/* ==========================================================
+   RAUDAL V8.6.12 — Perfil integral más compacto en celular
+   ========================================================== */
+@media (max-width:620px){
+  .teacher-visual-dashboard{gap:10px;margin-top:10px}
+  .visual-profile-card,.evolution-card{padding:15px 13px}
+
+  .student-profile-map.student-profile-map-10{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:8px;
+    min-height:0;
+    margin-top:10px;
+  }
+
+  .student-profile-map-10 .profile-map-center{
+    position:static;
+    grid-column:1/-1!important;
+    grid-row:auto!important;
+    width:auto!important;
+    min-height:118px;
+    height:auto!important;
+    transform:none;
+    padding:15px 18px;
+    border-radius:20px;
+    text-align:center;
+  }
+
+  .student-profile-map-10 .profile-map-center strong{
+    margin:5px 0 4px;
+    font-size:1.08rem;
+  }
+  .student-profile-map-10 .profile-map-center small{
+    width:auto;
+    max-width:250px;
+    font-size:.62rem;
+    line-height:1.4;
+  }
+
+  .student-profile-map-10 .profile-node{
+    position:static;
+    grid-column:auto!important;
+    grid-row:auto!important;
+    width:auto!important;
+    min-width:0;
+    min-height:76px;
+    height:auto;
+    transform:none;
+    padding:9px 8px;
+    gap:7px;
+    border-radius:13px;
+  }
+  .student-profile-map-10 .profile-node i{
+    flex:0 0 25px;
+    width:25px;
+    height:25px;
+    border-radius:8px;
+    font-size:.78rem;
+  }
+  .student-profile-map-10 .profile-node strong{
+    font-size:.61rem;
+    line-height:1.2;
+    overflow-wrap:anywhere;
+  }
+  .student-profile-map-10 .profile-node span{
+    margin-top:3px;
+    font-size:.55rem;
+    line-height:1.15;
+  }
+  .student-profile-map-10 .profile-node small{
+    display:none;
+  }
+
+  .profile-map-legend{
+    grid-column:1/-1;
+    gap:7px 10px;
+    padding-top:10px;
+  }
+  .profile-map-legend span{font-size:.51rem}
+
+  .radar-wrap{padding-top:2px}
+  .radar-shell{border-radius:15px}
+  .radar-svg{max-width:330px}
+  .radar-svg text{font-size:8.1px}
+  .radar-scale{grid-template-columns:1fr 1fr;display:grid;gap:6px;margin-top:6px}
+  .radar-scale span{text-align:center;padding:5px 6px;font-size:.5rem}
+  .radar-explainer{margin-top:8px}
+  .radar-reading{padding:9px 10px}
+  .radar-reading p{font-size:.56rem}
+  .radar-insights{grid-template-columns:1fr 1fr;gap:6px}
+  .radar-insights article{padding:9px 10px}
+  .radar-insights p{font-size:.56rem}
+}
+
+@media (max-width:390px){
+  .student-profile-map.student-profile-map-10{gap:7px}
+  .student-profile-map-10 .profile-node{padding:8px 7px;min-height:72px}
+  .student-profile-map-10 .profile-node strong{font-size:.58rem}
+  .student-profile-map-10 .profile-node span{font-size:.52rem}
+  .student-profile-map-10 .profile-node i{flex-basis:23px;width:23px;height:23px}
+}
