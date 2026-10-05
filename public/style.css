@@ -3288,3 +3288,138 @@ body{
   .quick-student-kpis{grid-template-columns:1fr !important}
   .school-demo-area-grid{grid-template-columns:1fr !important}
 }
+
+
+/* ==========================================================
+   RAUDAL V8.6.15 — Perfil integral tipo constelación
+   ========================================================== */
+.profile-constellation{
+  position:relative;
+  isolation:isolate;
+  min-height:560px;
+  margin-top:8px;
+  overflow:hidden;
+  border:1px solid rgba(94,234,212,.11);
+  border-radius:24px;
+  background:
+    radial-gradient(circle at 50% 48%,rgba(45,212,191,.12),transparent 24%),
+    radial-gradient(circle at 20% 20%,rgba(56,189,248,.05),transparent 28%),
+    linear-gradient(180deg,rgba(6,24,33,.96),rgba(5,18,27,.98));
+}
+.profile-constellation:before{
+  content:"";
+  position:absolute;inset:0;
+  pointer-events:none;
+  opacity:.45;
+  background-image:
+    radial-gradient(circle,rgba(103,232,213,.38) 0 1px,transparent 1.6px),
+    radial-gradient(circle,rgba(56,189,248,.24) 0 1px,transparent 1.5px);
+  background-size:73px 71px,109px 103px;
+  background-position:12px 18px,31px 47px;
+  mask-image:linear-gradient(to bottom,transparent 1%,#000 14%,#000 88%,transparent 100%);
+}
+.constellation-lines{position:absolute;inset:5%;width:90%;height:90%;z-index:1;overflow:visible}
+.constellation-link{stroke-width:.42;vector-effect:non-scaling-stroke;opacity:.78;filter:drop-shadow(0 0 2px currentColor)}
+.constellation-link.strength{stroke:#5EEAD4;color:#5EEAD4}
+.constellation-link.developing{stroke:#FDE68A;color:#FDE68A}
+.constellation-link.support{stroke:#FDA4AF;color:#FDA4AF}
+.constellation-link.unknown{stroke:#5F7F9E;color:#5F7F9E;opacity:.43}
+.constellation-orbit{position:absolute;left:50%;top:50%;z-index:0;transform:translate(-50%,-50%);border:1px dashed rgba(94,234,212,.12);border-radius:50%;pointer-events:none}
+.constellation-orbit.orbit-1{width:230px;height:230px}
+.constellation-orbit.orbit-2{width:330px;height:330px;border-color:rgba(56,189,248,.08)}
+.constellation-hub{
+  position:absolute;left:50%;top:50%;z-index:4;
+  width:164px;height:164px;transform:translate(-50%,-50%);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+  padding:18px;border-radius:50%;
+  border:1px solid rgba(94,234,212,.52);
+  background:
+    radial-gradient(circle at 38% 30%,rgba(94,234,212,.22),rgba(8,38,47,.96) 58%,rgba(4,19,27,.98));
+  box-shadow:0 0 0 9px rgba(45,212,191,.035),0 0 0 22px rgba(56,189,248,.018),0 18px 44px rgba(0,0,0,.30),0 0 38px rgba(45,212,191,.12);
+}
+.constellation-hub-icon{
+  width:42px;height:42px;margin-bottom:8px;border-radius:13px;
+  border:1px solid rgba(103,232,213,.22);
+  background:
+    linear-gradient(145deg,rgba(94,234,212,.14),rgba(56,189,248,.08)),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2367E8D5' stroke-width='1.65' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3 3.5 7.1 12 11l8.5-3.9L12 3Z'/%3E%3Cpath d='M6.5 9.2v5.1c0 1.4 2.5 3.5 5.5 3.5s5.5-2.1 5.5-3.5V9.2'/%3E%3Cpath d='M20.5 8v6'/%3E%3C/svg%3E") center/24px 24px no-repeat;
+}
+.constellation-hub small{color:#67E8D5;font-style:normal;font-size:.5rem;font-weight:950;letter-spacing:.10em}
+.constellation-hub strong{margin:5px 0 3px;font-size:1rem;line-height:1.05}
+.constellation-hub em{max-width:120px;color:#7D9AA7;font-style:normal;font-size:.53rem;line-height:1.35}
+.constellation-node{
+  position:absolute;z-index:5;
+  display:flex;align-items:flex-start;gap:8px;
+  width:175px;min-height:68px;padding:9px 10px;
+  border:1px solid rgba(148,163,184,.12);border-radius:16px;
+  background:rgba(6,24,34,.92);backdrop-filter:blur(6px);
+  box-shadow:0 10px 25px rgba(0,0,0,.13);
+}
+.constellation-node i{display:grid;place-items:center;flex:0 0 29px;width:29px;height:29px;border-radius:10px;background:#102B3E;font-style:normal;font-size:.82rem}
+.constellation-node>div{min-width:0}
+.constellation-node strong,.constellation-node span,.constellation-node small{display:block}
+.constellation-node strong{font-size:.61rem;line-height:1.18;overflow-wrap:anywhere}
+.constellation-node span{margin-top:3px;font-size:.55rem;font-weight:900;line-height:1.15}
+.constellation-node small{margin-top:2px;color:#6F8998;font-size:.46rem;line-height:1.22}
+.constellation-node.strength{border-color:rgba(94,234,212,.26)}.constellation-node.strength i,.constellation-node.strength span{color:#5EEAD4}
+.constellation-node.developing{border-color:rgba(253,230,138,.24)}.constellation-node.developing i,.constellation-node.developing span{color:#FDE68A}
+.constellation-node.support{border-color:rgba(253,164,175,.30)}.constellation-node.support i,.constellation-node.support span{color:#FDA4AF}
+.constellation-node.unknown{border-color:rgba(95,127,158,.23)}.constellation-node.unknown i,.constellation-node.unknown span{color:#8BA4BE}
+.constellation-node-1{left:50%;top:2%;transform:translateX(-50%)}
+.constellation-node-2{right:2%;top:15%}
+.constellation-node-3{right:1%;top:36%}
+.constellation-node-4{right:2%;top:62%}
+.constellation-node-5{right:12%;bottom:2%}
+.constellation-node-6{left:12%;bottom:2%}
+.constellation-node-7{left:2%;top:62%}
+.constellation-node-8{left:1%;top:36%}
+.constellation-node-9{left:2%;top:15%}
+.constellation-node-10{left:50%;bottom:1%;transform:translateX(-50%)}
+.constellation-legend{margin-top:10px;padding:10px 4px 0}
+
+.preview-profile-constellation{min-height:420px;border-radius:18px}
+.preview-profile-constellation .constellation-hub{width:126px;height:126px;padding:12px}
+.preview-profile-constellation .constellation-hub-icon{width:34px;height:34px;background-size:20px 20px;margin-bottom:6px}
+.preview-profile-constellation .constellation-hub strong{font-size:.76rem}.preview-profile-constellation .constellation-hub small{font-size:.42rem}.preview-profile-constellation .constellation-hub em{font-size:.43rem;max-width:94px}
+.preview-profile-constellation .constellation-orbit.orbit-1{width:180px;height:180px}.preview-profile-constellation .constellation-orbit.orbit-2{width:255px;height:255px}
+.preview-profile-constellation .constellation-node{width:142px;min-height:56px;padding:7px 8px;gap:6px}
+.preview-profile-constellation .constellation-node i{flex-basis:24px;width:24px;height:24px;font-size:.68rem}.preview-profile-constellation .constellation-node strong{font-size:.48rem}.preview-profile-constellation .constellation-node span{font-size:.44rem}.preview-profile-constellation .constellation-node small{font-size:.39rem}
+
+@media(max-width:1100px){
+  .profile-constellation{min-height:600px}
+  .constellation-node{width:160px}
+}
+
+@media(max-width:700px){
+  .profile-constellation{min-height:690px;border-radius:19px;margin-top:8px}
+  .constellation-lines{inset:4%;width:92%;height:92%}
+  .constellation-orbit.orbit-1{width:170px;height:170px}.constellation-orbit.orbit-2{width:250px;height:250px}
+  .constellation-hub{width:126px;height:126px;padding:12px}
+  .constellation-hub-icon{width:36px;height:36px;background-size:21px 21px;margin-bottom:6px}
+  .constellation-hub strong{font-size:.8rem}.constellation-hub small{font-size:.43rem}.constellation-hub em{font-size:.43rem;max-width:96px}
+  .constellation-node{width:43%;min-height:72px;padding:8px 8px;gap:6px;border-radius:14px}
+  .constellation-node i{flex:0 0 25px;width:25px;height:25px;font-size:.72rem}
+  .constellation-node strong{font-size:.56rem;line-height:1.18}
+  .constellation-node span{font-size:.50rem;line-height:1.15}
+  .constellation-node small{display:none}
+  .constellation-node-1{top:1%;width:58%;left:21%;transform:none}
+  .constellation-node-2{right:0;top:14%}
+  .constellation-node-3{right:0;top:31%}
+  .constellation-node-4{right:0;top:61%}
+  .constellation-node-5{right:2%;bottom:8%}
+  .constellation-node-6{left:2%;bottom:8%}
+  .constellation-node-7{left:0;top:61%}
+  .constellation-node-8{left:0;top:31%}
+  .constellation-node-9{left:0;top:14%}
+  .constellation-node-10{bottom:0;width:58%;left:21%;transform:none}
+  .preview-profile-constellation{min-height:620px}
+}
+
+@media(max-width:430px){
+  .profile-constellation{min-height:650px}
+  .constellation-node{width:44%;min-height:68px;padding:7px}
+  .constellation-node strong{font-size:.53rem}.constellation-node span{font-size:.48rem}
+  .constellation-node-1,.constellation-node-10{width:60%;left:20%}
+  .constellation-hub{width:118px;height:118px}
+  .constellation-orbit.orbit-1{width:155px;height:155px}.constellation-orbit.orbit-2{width:225px;height:225px}
+}
