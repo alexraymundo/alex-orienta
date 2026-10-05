@@ -3423,3 +3423,46 @@ body{
   .constellation-hub{width:118px;height:118px}
   .constellation-orbit.orbit-1{width:155px;height:155px}.constellation-orbit.orbit-2{width:225px;height:225px}
 }
+
+/* ==========================================================
+   RAUDAL V8.6.16 — Constelación compacta + carga percibida rápida
+   ========================================================== */
+.constellation-lines-mobile{display:none}
+.teacher-student-loading{display:grid;gap:10px;padding:18px;border:1px solid var(--line);border-radius:18px;background:#071B24;overflow:hidden}
+.teacher-student-loading>span{margin-top:3px;color:#7896A2;font-size:.66rem}
+.loading-shimmer,.loading-grid i{display:block;border-radius:10px;background:linear-gradient(90deg,rgba(148,163,184,.07),rgba(94,234,212,.11),rgba(148,163,184,.07));background-size:220% 100%;animation:raudalShimmer 1.1s linear infinite}
+.loading-shimmer{height:14px;width:100%}.loading-shimmer-title{height:24px;width:48%}.loading-shimmer-short{width:68%}
+.loading-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:5px}.loading-grid i{height:90px}
+@keyframes raudalShimmer{0%{background-position:200% 0}100%{background-position:-20% 0}}
+
+@media(max-width:700px){
+  .profile-constellation{min-height:500px!important;border-radius:18px!important;margin-top:7px!important}
+  .constellation-lines-desktop{display:none!important}
+  .constellation-lines-mobile{display:block!important;inset:3%!important;width:94%!important;height:94%!important}
+  .constellation-orbit.orbit-1{width:145px!important;height:145px!important}
+  .constellation-orbit.orbit-2{width:205px!important;height:205px!important}
+  .constellation-hub{width:106px!important;height:106px!important;padding:9px!important}
+  .constellation-hub-icon{width:30px!important;height:30px!important;background-size:18px 18px!important;margin-bottom:4px!important}
+  .constellation-hub small{font-size:.39rem!important}.constellation-hub strong{font-size:.72rem!important;margin:4px 0 2px!important}.constellation-hub em{font-size:.38rem!important;max-width:82px!important}
+  .constellation-node{width:44%!important;min-height:57px!important;padding:6px 7px!important;gap:6px!important;border-radius:12px!important}
+  .constellation-node i{flex:0 0 23px!important;width:23px!important;height:23px!important;font-size:.66rem!important;border-radius:8px!important}
+  .constellation-node strong{font-size:.50rem!important;line-height:1.14!important}.constellation-node span{font-size:.45rem!important;line-height:1.12!important}.constellation-node small{display:none!important}
+  .constellation-node-1{top:1%!important;width:54%!important;left:23%!important;transform:none!important}
+  .constellation-node-9{left:0!important;top:14%!important}.constellation-node-2{right:0!important;top:14%!important}
+  .constellation-node-8{left:0!important;top:29%!important}.constellation-node-3{right:0!important;top:29%!important}
+  .constellation-node-7{left:0!important;top:59%!important}.constellation-node-4{right:0!important;top:59%!important}
+  .constellation-node-6{left:0!important;bottom:8%!important}.constellation-node-5{right:0!important;bottom:8%!important}
+  .constellation-node-10{bottom:0!important;width:54%!important;left:23%!important;transform:none!important}
+  .constellation-legend{margin-top:7px!important;padding-top:8px!important;gap:6px 9px!important}
+  .constellation-legend span{font-size:.49rem!important}
+  .preview-profile-constellation{min-height:480px!important}
+  .teacher-student-loading{padding:14px}.loading-grid i{height:72px}
+}
+@media(max-width:390px){
+  .profile-constellation{min-height:475px!important}
+  .constellation-node{width:45%!important;min-height:54px!important;padding:6px!important}
+  .constellation-node-1,.constellation-node-10{width:56%!important;left:22%!important}
+  .constellation-node strong{font-size:.48rem!important}.constellation-node span{font-size:.43rem!important}
+  .constellation-hub{width:100px!important;height:100px!important}
+}
+@media(prefers-reduced-motion:reduce){.loading-shimmer,.loading-grid i{animation:none}}

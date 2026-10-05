@@ -834,7 +834,10 @@ async function verifyTurnstile(req, env, token) {
 }
 
 
+let schoolModuleSchemaPromise = null;
 async function ensureSchoolModuleTables(env) {
+  if (schoolModuleSchemaPromise) return schoolModuleSchemaPromise;
+  schoolModuleSchemaPromise = (async () => {
   const statements = [
     `CREATE TABLE IF NOT EXISTS person_programs (person_id TEXT PRIMARY KEY, therapy_with_alex INTEGER NOT NULL DEFAULT 0, school_followup INTEGER NOT NULL DEFAULT 0, school_name TEXT, grade_level TEXT, school_year TEXT, updated_at TEXT NOT NULL, FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE)`,
     `CREATE TABLE IF NOT EXISTS teachers (id TEXT PRIMARY KEY, full_name TEXT NOT NULL, email TEXT, school_name TEXT, access_hash TEXT NOT NULL, access_hint TEXT, active INTEGER NOT NULL DEFAULT 1, agreement_version TEXT NOT NULL DEFAULT '1.0', agreement_accepted_at TEXT, agreement_signed_name TEXT, last_login_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
@@ -856,6 +859,13 @@ async function ensureSchoolModuleTables(env) {
   await ensureColumn(env, "teacher_observations", "private_note", "TEXT");
   await ensureColumn(env, "teacher_observations", "included_in_record", "INTEGER NOT NULL DEFAULT 0");
   await ensureColumn(env, "family_observations", "private_note", "TEXT");
+  })();
+  try {
+    return await schoolModuleSchemaPromise;
+  } catch (error) {
+    schoolModuleSchemaPromise = null;
+    throw error;
+  }
 }
 
 
@@ -1211,7 +1221,7 @@ async function getSchoolSnapshot(env, personId, reviewedOnly = true) {
     )
   `;
 
-  const stats = await env.DB.prepare(`${combined}
+  const statsQuery = env.DB.prepare(`${combined}
     SELECT COUNT(*) AS observation_count,
       MAX(review_time) AS last_reviewed_at,
       SUM(CASE WHEN source='teacher' THEN 1 ELSE 0 END) AS teacher_count,
@@ -1227,9 +1237,33 @@ async function getSchoolSnapshot(env, personId, reviewedOnly = true) {
     `SUM(CASE WHEN ${field}=3 THEN 1 ELSE 0 END) AS ${key}_3`
   ]).join(', ');
 
-  const distRow = await env.DB.prepare(`${combined}
+  const distributionQuery = env.DB.prepare(`${combined}
     SELECT ${distributionSelect} FROM combined
   `).bind(personId, personId).first();
+
+  const contextsQuery = env.DB.prepare(`${combined}
+    SELECT COALESCE(NULLIF(context,''),'Sin contexto') AS context, COUNT(*) AS count
+    FROM combined
+    GROUP BY COALESCE(NULLIF(context,''),'Sin contexto')
+    ORDER BY count DESC, context ASC
+    LIMIT 8
+  `).bind(personId, personId).all();
+
+  const trendQuery = env.DB.prepare(`${combined}
+    SELECT observation_date, context, source,
+      attention_support,instructions_support,organization_support,peer_support,
+      frustration_support,transitions_support,autonomy_support,help_seeking_support
+    FROM combined
+    ORDER BY observation_date DESC, review_time DESC
+    LIMIT 10
+  `).bind(personId, personId).all();
+
+  const [stats, distRow, contextsResult, trendResult] = await Promise.all([
+    statsQuery,
+    distributionQuery,
+    contextsQuery,
+    trendQuery
+  ]);
 
   const distribution = {};
   for (const key of Object.keys(fields)) {
@@ -1245,22 +1279,8 @@ async function getSchoolSnapshot(env, personId, reviewedOnly = true) {
     };
   }
 
-  const { results: contexts } = await env.DB.prepare(`${combined}
-    SELECT COALESCE(NULLIF(context,''),'Sin contexto') AS context, COUNT(*) AS count
-    FROM combined
-    GROUP BY COALESCE(NULLIF(context,''),'Sin contexto')
-    ORDER BY count DESC, context ASC
-    LIMIT 8
-  `).bind(personId, personId).all();
-
-  const { results: trendDesc } = await env.DB.prepare(`${combined}
-    SELECT observation_date, context, source,
-      attention_support,instructions_support,organization_support,peer_support,
-      frustration_support,transitions_support,autonomy_support,help_seeking_support
-    FROM combined
-    ORDER BY observation_date DESC, review_time DESC
-    LIMIT 10
-  `).bind(personId, personId).all();
+  const contexts = contextsResult?.results || [];
+  const trendDesc = trendResult?.results || [];
 
   return {
     observation_count: Number(stats?.observation_count || 0),
@@ -1773,18 +1793,21 @@ Nunca tienes acceso a las notas privadas de Alex.
     if (!teacher?.agreement_accepted_at || teacher.agreement_version !== TEACHER_AGREEMENT_VERSION) return json({ error: "Primero acepta el acuerdo de confidencialidad." }, 403);
     const personId = path.split("/").pop();
     if (!(await teacherAssignment(env, session.actorId, personId))) return json({ error: "No tienes acceso a este alumno." }, 403);
-    const person = await env.DB.prepare(`SELECT id,full_name,age FROM people WHERE id=?`).bind(personId).first();
-    const program = await getPersonProgram(env, personId);
-    const continuity = await env.DB.prepare(`SELECT general_description,strengths,support_needs,strategies,watch_items,approved_at,updated_at FROM school_continuity WHERE person_id=? AND approved_at IS NOT NULL`).bind(personId).first();
-    const snapshot = continuity ? await getSchoolSnapshot(env, personId, true) : { observation_count: 0, teacher_count: 0, professional_count: 0, distribution: {}, contexts: [], trend: [], last_reviewed_at: null };
-    const [{ results: ownObservations }, { results: professionalObservations }, enrollment, transfer] = await Promise.all([
+    const [person, program, continuity, ownResult, professionalResult, enrollment, transfer] = await Promise.all([
+      env.DB.prepare(`SELECT id,full_name,age FROM people WHERE id=?`).bind(personId).first(),
+      getPersonProgram(env, personId),
+      env.DB.prepare(`SELECT general_description,strengths,support_needs,strategies,watch_items,approved_at,updated_at FROM school_continuity WHERE person_id=? AND approved_at IS NOT NULL`).bind(personId).first(),
       env.DB.prepare(`SELECT id,observation_date,subject,context,description,status,professional_comment FROM teacher_observations WHERE teacher_id=? AND person_id=? ORDER BY observation_date DESC,created_at DESC LIMIT 20`).bind(session.actorId, personId).all(),
       env.DB.prepare(`SELECT id,observation_date,subject,context,description,strategy_used,recommendation_text,published_at FROM professional_school_observations WHERE person_id=? AND visible_to_teachers=1 ORDER BY observation_date DESC,created_at DESC LIMIT 12`).bind(personId).all(),
       currentEnrollment(env,personId),
       latestTeacherTransfer(env,personId,session.actorId)
     ]);
-    await logAudit(env, "teacher", session.actorId, "view_student_continuity", personId, "Consulta de ficha de continuidad escolar");
-    return json({ person, program, enrollment: enrollment || {}, continuity: continuity || {}, snapshot, latest_transfer: transfer || null, own_observations: ownObservations || [], professional_observations: professionalObservations || [] });
+    const snapshotPromise = continuity
+      ? getSchoolSnapshot(env, personId, true)
+      : Promise.resolve({ observation_count: 0, teacher_count: 0, professional_count: 0, distribution: {}, contexts: [], trend: [], last_reviewed_at: null });
+    const auditPromise = logAudit(env, "teacher", session.actorId, "view_student_continuity", personId, "Consulta de ficha de continuidad escolar");
+    const [snapshot] = await Promise.all([snapshotPromise, auditPromise]);
+    return json({ person, program, enrollment: enrollment || {}, continuity: continuity || {}, snapshot, latest_transfer: transfer || null, own_observations: ownResult?.results || [], professional_observations: professionalResult?.results || [] });
   }
 
   if (path === "/api/teacher/observation" && req.method === "POST") {
