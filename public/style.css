@@ -3171,3 +3171,120 @@ body{
   .visual-profile-card .student-profile-map-10 .profile-node span,
   .student-profile-map-10 .profile-node span{font-size:.50rem !important;}
 }
+
+
+/* ==========================================================
+   RAUDAL V8.6.14 — Mobile sweep + visual badge in profile center
+   ========================================================== */
+.profile-map-center{position:relative;overflow:hidden}
+.profile-map-center::before{
+  content:"";
+  display:block;
+  width:48px;
+  height:48px;
+  margin:0 auto 10px;
+  border-radius:14px;
+  border:1px solid rgba(103,232,213,.22);
+  background:
+    linear-gradient(145deg,rgba(94,234,212,.18),rgba(56,189,248,.12)),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2367E8D5' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 8l9-4 9 4-9 4-9-4Z'/%3E%3Cpath d='M6 10.5V15.5C6 16.7 8.7 19 12 19s6-2.3 6-3.5V10.5'/%3E%3Cpath d='M21 9v6'/%3E%3C/svg%3E") center/24px 24px no-repeat;
+  box-shadow:0 10px 24px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.04);
+}
+.profile-map-center > span{margin-top:1px}
+.profile-map-center > strong{max-width:200px;text-wrap:balance}
+.profile-map-center > small{max-width:170px;text-wrap:balance}
+
+@media (max-width:900px){
+  .role-main{width:min(100%,94%);padding:32px 0 78px}
+  .role-main>section>h1,.family-hero h1{font-size:clamp(2.2rem,9vw,3.15rem)}
+  .teacher-home-head{gap:14px}
+  .teacher-scope-note{min-width:0;width:100%}
+  .teacher-student-tabs{width:100%;justify-content:flex-start;overflow:auto;padding:4px}
+  .teacher-student-tabs button{flex:0 0 auto}
+  .teacher-report-shell{gap:12px}
+  .teacher-report-hero,.report-card,.continuity-feature,.continuity-detail-grid article,.panel{padding:16px}
+  .report-card-head{gap:10px;margin-bottom:10px}
+  .teacher-report-hero h3{font-size:1.22rem}
+  .report-card-head h3{font-size:.95rem}
+  .student-card{padding:16px;min-height:118px}
+  .student-card strong{font-size:1.05rem;margin:14px 0 7px}
+  .directory-head,.role-section-head,.panel-head{gap:12px}
+  .student-quick-panel{padding:24px 16px}
+  .quick-student-kpis article{padding:10px}
+  .cideb-overview-stats article{padding:14px}
+}
+
+@media (max-width:700px){
+  .role-topbar{grid-template-columns:1fr auto;gap:10px;padding:12px 14px}
+  .role-topbar .brand{min-width:0}
+  .role-identity{display:none}
+  .role-main{width:min(100%,95%);padding:26px 0 72px}
+  .teacher-report-heading h2,.role-section-head h2{font-size:1.85rem}
+  .teacher-report-hero p,.continuity-feature p,.continuity-detail-grid p{font-size:.72rem;line-height:1.58}
+  .teacher-report-disclaimer{font-size:.58rem;padding:11px 12px}
+  .teacher-student-tabs button{padding:9px 12px;font-size:.64rem}
+  .clean-form-intro p,.muted{font-size:.72rem}
+  .directory-search-row{grid-template-columns:1fr !important;gap:8px}
+  .directory-meta-row{display:grid;grid-template-columns:1fr;gap:6px}
+  .directory-pagination{justify-content:flex-start;flex-wrap:wrap}
+  .student-table-row{grid-template-columns:1fr !important}
+  .row-open-btn{justify-self:start}
+  .cideb-overview-stats{grid-template-columns:1fr !important}
+  .teacher-visual-dashboard{gap:10px}
+  .visual-profile-card .report-card-head small,
+  .evolution-card .report-card-head small{display:none}
+}
+
+@media (max-width:520px){
+  .topbar{padding:10px 11px !important;gap:8px !important}
+  .brand strong{font-size:.8rem}
+  .top-actions{gap:5px}
+  .cideb-access-btn{min-height:36px;padding:0 8px;font-size:.64rem}
+  .top-actions .ghost-btn{padding:8px 7px;font-size:.60rem}
+
+  .hero{padding:44px 5% 44px !important;gap:24px !important}
+  .hero h1{font-size:clamp(2.15rem,11vw,2.8rem) !important}
+  .hero p,.lead{font-size:.88rem !important;line-height:1.58 !important}
+  .glass-card,.school-demo-card,.school-capability-card,.section,.report-card,.continuity-feature,.continuity-detail-grid article,.panel{border-radius:18px}
+
+  .school-demo-card{padding:14px !important}
+  .school-demo-student{gap:10px;padding:11px !important}
+  .school-demo-avatar{width:40px;height:40px;border-radius:12px}
+  .school-demo-area-grid{grid-template-columns:1fr 1fr !important}
+  .school-demo-report article{padding:10px}
+
+  .teacher-home-head p{font-size:.74rem;line-height:1.55}
+  .teacher-scope-note{padding:10px 12px}
+  .teacher-student-detail-head h2{font-size:1.55rem}
+  .teacher-back-link{font-size:.62rem;margin-bottom:14px}
+  .teacher-student-tabs{margin:10px 0 16px}
+  .teacher-student-tabs button{padding:8px 11px;font-size:.62rem}
+  .teacher-report-hero,.report-card,.continuity-feature,.continuity-detail-grid article{padding:14px}
+  .teacher-report-heading h2{font-size:1.65rem}
+  .report-card-head h3{font-size:.9rem}
+  .continuity-feature h3{font-size:1rem}
+
+  .profile-map-center::before{width:42px;height:42px;margin-bottom:8px;background-size:21px 21px}
+  .student-profile-map-10 .profile-map-center{min-height:108px !important;padding:13px 12px !important}
+  .student-profile-map-10 .profile-map-center strong{font-size:.92rem !important}
+  .student-profile-map-10 .profile-map-center small{font-size:.56rem !important;max-width:210px !important}
+
+  .student-quick-panel{padding:22px 14px}
+  .student-quick-panel h2{font-size:1.45rem}
+  .quick-panel-close{top:10px;right:12px}
+  .quick-student-kpis{grid-template-columns:1fr 1fr !important;gap:7px}
+  .readonly-field{font-size:.66rem;padding:10px}
+
+  .directory-head h2,.panel-head h2{font-size:1.32rem}
+  .directory-actions{width:100%}
+  .directory-actions button{width:100%}
+  .student-card{padding:14px}
+  .student-card strong{font-size:1rem}
+}
+
+@media (max-width:390px){
+  .top-actions .ghost-btn{display:none}
+  .teacher-student-tabs button{padding:8px 10px;font-size:.6rem}
+  .quick-student-kpis{grid-template-columns:1fr !important}
+  .school-demo-area-grid{grid-template-columns:1fr !important}
+}
