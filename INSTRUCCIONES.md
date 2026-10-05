@@ -1,4 +1,4 @@
-# NORTIA V8.5.1 — Corrección de borrador IA
+# RAUDAL V8.5.1 — Corrección de borrador IA
 
 ## Corrección principal
 Se corrigió el error que podía mostrar `La IA no devolvió un borrador estructurado`.
@@ -12,12 +12,12 @@ La generación ahora:
 
 No requiere migración de D1.
 
-# NORTIA V8.5 — Informe asistido por IA
+# RAUDAL V8.5 — Informe asistido por IA
 
 ## Qué cambia
 - En `CIDEB > Informes para docentes`, Alex puede generar un **borrador con IA** incluso cuando existe una sola observación autorizada.
 - La IA solo recibe observaciones docentes **revisadas** y observaciones profesionales que Alex marcó como **visibles para docentes**.
-- Las notas privadas, terapia y conversaciones de NORTIA Reflexión no se usan en este borrador.
+- Las notas privadas, terapia y conversaciones de RAUDAL Reflexión no se usan en este borrador.
 - Con 1–2 registros el sistema etiqueta la evidencia como **Datos iniciales** y prohíbe a la IA presentar tendencias o patrones estables.
 - Alex siempre puede editar el borrador y **nada se publica automáticamente**.
 - El docente y Coordinación ven únicamente el informe que Alex publica, no la herramienta de IA.

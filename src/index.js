@@ -632,7 +632,7 @@ async function sendAlexEmail(env, subject, text, html = "") {
 
   const from =
     safeText(env.RESEND_FROM_EMAIL, 240) ||
-    "NORTIA <onboarding@resend.dev>";
+    "RAUDAL <onboarding@resend.dev>";
 
   try {
     const response = await fetch("https://api.resend.com/emails", {
@@ -716,8 +716,8 @@ async function createNotification(env, {
 
   const emailResult = await sendAlexEmail(
     env,
-    emailSubject || `NORTIA · ${title}`,
-    `Hay una nueva actividad en NORTIA que requiere tu atención.\n\nTipo: ${safeText(type, 60)}\n\nIngresa al Panel Profesional para revisar los detalles.`,
+    emailSubject || `RAUDAL · ${title}`,
+    `Hay una nueva actividad en RAUDAL que requiere tu atención.\n\nTipo: ${safeText(type, 60)}\n\nIngresa al Panel Profesional para revisar los detalles.`,
     ""
   );
 
@@ -1424,7 +1424,7 @@ async function api(req, env, url) {
         title: "Actividad completada",
         message: `${exercise.full_name} completó: ${exercise.title}.`,
         priority: "normal",
-        emailSubject: "NORTIA · Actividad completada",
+        emailSubject: "RAUDAL · Actividad completada",
         emailText:
           `${exercise.full_name} marcó una actividad como completada.\n\n` +
           `Actividad: ${exercise.title}\n\n` +
@@ -1445,7 +1445,7 @@ async function api(req, env, url) {
     if (check.response) return check.response;
 
     const personId = check.session.personId;
-    if (!(await assertTherapyAI(env, personId))) return json({ error: "NORTIA Reflexión está disponible únicamente para procesos terapéuticos activos con Alex." }, 403);
+    if (!(await assertTherapyAI(env, personId))) return json({ error: "RAUDAL Reflexión está disponible únicamente para procesos terapéuticos activos con Alex." }, 403);
     const b = await parseBody(req);
     const message = safeText(b.message, 4000);
 
@@ -1465,19 +1465,19 @@ async function api(req, env, url) {
 
     if (!access.consent_confirmed) {
       return json({
-        error: "NORTIA Reflexión todavía no está habilitada porque falta confirmar el consentimiento."
+        error: "RAUDAL Reflexión todavía no está habilitada porque falta confirmar el consentimiento."
       }, 403);
     }
 
     if (!access.ai_enabled) {
       return json({
-        error: "Alex todavía no ha habilitado NORTIA Reflexión para este proceso."
+        error: "Alex todavía no ha habilitado RAUDAL Reflexión para este proceso."
       }, 403);
     }
 
     if (!env.AI || typeof env.AI.run !== "function") {
       return json({
-        error: "NORTIA Reflexión no está disponible en este momento."
+        error: "RAUDAL Reflexión no está disponible en este momento."
       }, 503);
     }
 
@@ -1521,13 +1521,13 @@ async function api(req, env, url) {
       await createNotification(env, {
         type: "ai_risk",
         personId,
-        title: "Alerta de seguimiento en NORTIA Reflexión",
+        title: "Alerta de seguimiento en RAUDAL Reflexión",
         message:
           `${riskPerson?.full_name || "Una persona"} generó una alerta que requiere revisión humana.`,
         priority: "critical",
-        emailSubject: "NORTIA · Alerta de seguimiento",
+        emailSubject: "RAUDAL · Alerta de seguimiento",
         emailText:
-          `Se generó una alerta de seguimiento en NORTIA Reflexión.\n\n` +
+          `Se generó una alerta de seguimiento en RAUDAL Reflexión.\n\n` +
           `Persona: ${riskPerson?.full_name || "Sin nombre"}\n\n` +
           `Por privacidad, el contenido de la conversación no se incluye en este correo.\n` +
           `Ingresa al Panel Profesional para revisarla.`
@@ -1561,7 +1561,7 @@ async function api(req, env, url) {
       : "Sin seguimientos compartidos.";
 
     const system = `
-Eres "NORTIA Reflexión", una herramienta complementaria dentro de NORTIA.
+Eres "RAUDAL Reflexión", una herramienta complementaria dentro de RAUDAL.
 
 OBJETIVO:
 Ayudar a la persona a ordenar ideas, explorar opciones, preparar conversaciones,
@@ -1629,7 +1629,7 @@ Nunca tienes acceso a las notas privadas de Alex.
 
       if (!reply) {
         return json({
-          error: "NORTIA Reflexión no pudo generar texto en este momento."
+          error: "RAUDAL Reflexión no pudo generar texto en este momento."
         }, 502);
       }
 
@@ -1661,14 +1661,14 @@ Nunca tienes acceso a las notas privadas de Alex.
         await createNotification(env, {
           type: "ai_limit",
           personId,
-          title: "Límite diario de NORTIA Reflexión",
+          title: "Límite diario de RAUDAL Reflexión",
           message:
             `${limitPerson?.full_name || "Una persona"} alcanzó su límite diario de ${usage.limit} mensajes.`,
           priority: "low",
-          emailSubject: "NORTIA · Límite diario de Reflexión",
+          emailSubject: "RAUDAL · Límite diario de Reflexión",
           emailText:
             `${limitPerson?.full_name || "Una persona"} alcanzó el límite diario de ` +
-            `${usage.limit} mensajes en NORTIA Reflexión.\n\n` +
+            `${usage.limit} mensajes en RAUDAL Reflexión.\n\n` +
             `Si lo consideras necesario, puedes otorgarle mensajes adicionales desde su ficha.`
         });
       }
@@ -1681,7 +1681,7 @@ Nunca tienes acceso a las notas privadas de Alex.
       });
     } catch (error) {
       return json({
-        error: `NORTIA Reflexión: ${safeText(error?.message || error, 500)}`
+        error: `RAUDAL Reflexión: ${safeText(error?.message || error, 500)}`
       }, 502);
     }
   }
@@ -1807,7 +1807,7 @@ Nunca tienes acceso a las notas privadas de Alex.
       .bind(id,session.actorId,personId,observationDate,safeText(b.subject,120),safeText(b.context,120),clamp(b.attention_support),clamp(b.instructions_support),clamp(b.organization_support),clamp(b.peer_support),clamp(b.frustration_support),clamp(b.transitions_support),clamp(b.autonomy_support),clamp(b.help_seeking_support),description,safeText(b.antecedent,3000),safeText(b.strategy_used,3000),safeText(b.result_text,3000),safeText(b.additional_comments,3000),now,now).run();
     const person = await env.DB.prepare(`SELECT full_name FROM people WHERE id=?`).bind(personId).first();
     await logAudit(env,"teacher",session.actorId,"submit_observation",personId,"Comentario docente enviado a revisión");
-    await createNotification(env,{type:"teacher_observation",personId,title:"Nuevo comentario docente",message:`${teacher.full_name} envió un comentario sobre ${person?.full_name || "un alumno"}.`,priority:"normal",emailSubject:"NORTIA · Nuevo comentario docente",emailText:`${teacher.full_name} envió un comentario escolar para ${person?.full_name || "un alumno"}.\n\nIngresa al Panel Profesional para revisarlo y decidir si debe integrarse al expediente.`});
+    await createNotification(env,{type:"teacher_observation",personId,title:"Nuevo comentario docente",message:`${teacher.full_name} envió un comentario sobre ${person?.full_name || "un alumno"}.`,priority:"normal",emailSubject:"RAUDAL · Nuevo comentario docente",emailText:`${teacher.full_name} envió un comentario escolar para ${person?.full_name || "un alumno"}.\n\nIngresa al Panel Profesional para revisarlo y decidir si debe integrarse al expediente.`});
     return json({ok:true,id});
   }
 
@@ -1979,7 +1979,7 @@ Nunca tienes acceso a las notas privadas de Alex.
     await env.DB.prepare(`INSERT INTO family_observations (id,guardian_id,person_id,observation_date,context,observation_text,what_helped,questions,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,'submitted',?,?)`).bind(id,guardian.id,guardian.person_id,observationDate,safeText(b.context,160),observation,safeText(b.what_helped,3000),safeText(b.questions,3000),now,now).run();
     const person=await env.DB.prepare(`SELECT full_name FROM people WHERE id=?`).bind(guardian.person_id).first();
     await logAudit(env,"family",guardian.id,"submit_family_observation",guardian.person_id,"Observación familiar enviada a revisión");
-    await createNotification(env,{type:"family_observation",personId:guardian.person_id,title:"Nueva observación familiar",message:`${guardian.full_name} compartió una observación sobre ${person?.full_name || "un menor"}.`,priority:"normal",emailSubject:"NORTIA · Nueva observación familiar",emailText:`${guardian.full_name} compartió una nueva observación familiar sobre ${person?.full_name || "un menor"}.\n\nIngresa al Panel Profesional para revisarla.`});
+    await createNotification(env,{type:"family_observation",personId:guardian.person_id,title:"Nueva observación familiar",message:`${guardian.full_name} compartió una observación sobre ${person?.full_name || "un menor"}.`,priority:"normal",emailSubject:"RAUDAL · Nueva observación familiar",emailText:`${guardian.full_name} compartió una nueva observación familiar sobre ${person?.full_name || "un menor"}.\n\nIngresa al Panel Profesional para revisarla.`});
     return json({ok:true,id});
   }
 
@@ -2040,7 +2040,7 @@ Nunca tienes acceso a las notas privadas de Alex.
       title: "Nueva solicitud de cita",
       message: `${name} solicitó una sesión para ${date} a las ${time}.`,
       priority: "normal",
-      emailSubject: "NORTIA · Nueva solicitud de cita"
+      emailSubject: "RAUDAL · Nueva solicitud de cita"
     });
     return json({ ok: true, appointment_id: id });
   }
@@ -2062,7 +2062,7 @@ Nunca tienes acceso a las notas privadas de Alex.
     return json({
       recipient: ALEX_NOTIFICATION_EMAIL,
       email_configured: !!env.RESEND_API_KEY,
-      from: safeText(env.RESEND_FROM_EMAIL, 240) || "NORTIA <onboarding@resend.dev>",
+      from: safeText(env.RESEND_FROM_EMAIL, 240) || "RAUDAL <onboarding@resend.dev>",
       unread_count: Number(unread?.count || 0)
     });
   }
@@ -2118,14 +2118,14 @@ Nunca tienes acceso a las notas privadas de Alex.
   if (path === "/api/admin/notifications/test-email" && req.method === "POST") {
     const result = await sendAlexEmail(
       env,
-      "NORTIA · Correo de prueba",
-      "La conexión de notificaciones de NORTIA está funcionando correctamente.",
+      "RAUDAL · Correo de prueba",
+      "La conexión de notificaciones de RAUDAL está funcionando correctamente.",
       `
         <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px">
-          <div style="font-size:12px;letter-spacing:2px;color:#0ea5e9;font-weight:700">NORTIA</div>
+          <div style="font-size:12px;letter-spacing:2px;color:#0ea5e9;font-weight:700">RAUDAL</div>
           <h2 style="color:#0f172a">Notificaciones activas</h2>
           <p style="color:#475569;line-height:1.6">
-            La conexión de correo de NORTIA está funcionando correctamente.
+            La conexión de correo de RAUDAL está funcionando correctamente.
           </p>
           <p style="color:#64748b;font-size:13px">
             Destinatario: ${escapeEmailHTML(ALEX_NOTIFICATION_EMAIL)}
@@ -2427,7 +2427,7 @@ Nunca tienes acceso a las notas privadas de Alex.
     const alexNotes = safeText(b.alex_notes, 3000);
     if (!personId) return json({ error: "Persona obligatoria." }, 400);
     if (!env.AI || typeof env.AI.run !== "function") {
-      return json({ error: "La IA interna de NORTIA no está disponible en este momento." }, 503);
+      return json({ error: "La IA interna de RAUDAL no está disponible en este momento." }, 503);
     }
 
     const [person, program, snapshot, teacherRows, professionalRows] = await Promise.all([
@@ -2489,7 +2489,7 @@ Nunca tienes acceso a las notas privadas de Alex.
     }));
 
     const system = `
-Eres un asistente interno de redacción para NORTIA. Tu trabajo es preparar un BORRADOR de continuidad escolar para que Alex lo revise antes de publicarlo.
+Eres un asistente interno de redacción para RAUDAL. Tu trabajo es preparar un BORRADOR de continuidad escolar para que Alex lo revise antes de publicarlo.
 
 REGLAS OBLIGATORIAS:
 - Usa únicamente la evidencia escolar autorizada incluida en el mensaje y, si existen, las notas textuales de Alex incluidas como contexto adicional. No inventes hechos.
@@ -3335,7 +3335,7 @@ RESPONDE EXCLUSIVAMENTE CON ESTAS 5 ETIQUETAS, SIN JSON, SIN MARKDOWN Y SIN TEXT
     const program = await getPersonProgram(env, personId);
 
     if (aiEnabled && !program.therapy_with_alex) {
-      return json({ error: "NORTIA Reflexión solo puede habilitarse para personas con proceso terapéutico activo con Alex." }, 400);
+      return json({ error: "RAUDAL Reflexión solo puede habilitarse para personas con proceso terapéutico activo con Alex." }, 400);
     }
 
     if (aiEnabled && !consent) {
@@ -3546,7 +3546,7 @@ RESPONDE EXCLUSIVAMENTE CON ESTAS 5 ETIQUETAS, SIN JSON, SIN MARKDOWN Y SIN TEXT
 
     if (!message) {
       return json({
-        error: "Escribe un mensaje para probar NORTIA Reflexión."
+        error: "Escribe un mensaje para probar RAUDAL Reflexión."
       }, 400);
     }
 
@@ -3611,7 +3611,7 @@ RESPONDE EXCLUSIVAMENTE CON ESTAS 5 ETIQUETAS, SIN JSON, SIN MARKDOWN Y SIN TEXT
     const isDemo = personId === "__demo__";
 
     const system = `
-Eres "NORTIA Reflexión", una herramienta de orientación vocacional y desarrollo personal supervisada por Alex.
+Eres "RAUDAL Reflexión", una herramienta de orientación vocacional y desarrollo personal supervisada por Alex.
 
 TU PAPEL:
 Ayudar a ordenar ideas, explorar opciones, identificar preguntas útiles y convertir una inquietud difusa en próximos pasos concretos.
@@ -3729,7 +3729,7 @@ export default {
       try {
         return addSecurityHeaders(await api(req, env, url), true);
       } catch (error) {
-        console.error("NORTIA internal error", error);
+        console.error("RAUDAL internal error", error);
         return addSecurityHeaders(
           json({ error: "Ocurrió un error interno. Intenta nuevamente." }, 500),
           true

@@ -124,7 +124,7 @@ function renderClientData() {
     $("#aiAccessDetail").textContent = "Tu profesional todavía no habilita esta herramienta.";
   } else {
     $("#aiAccessState").textContent = "Disponible";
-    $("#aiAccessDetail").textContent = "Puedes usarla desde la pestaña NORTIA Reflexión.";
+    $("#aiAccessDetail").textContent = "Puedes usarla desde la pestaña RAUDAL Reflexión.";
   }
 
   renderSharedFields(data.custom_fields);
@@ -240,7 +240,7 @@ function renderAIState(access) {
 
   if (!canUseAI) {
     $("#clientAIDisabled").innerHTML = `
-      <strong>${!therapyEligible ? "NORTIA Reflexión no forma parte de este tipo de proceso." : "NORTIA Reflexión todavía no está habilitada."}</strong>
+      <strong>${!therapyEligible ? "RAUDAL Reflexión no forma parte de este tipo de proceso." : "RAUDAL Reflexión todavía no está habilitada."}</strong>
       <p>
         ${!access.consent_confirmed
           ? "Primero debe quedar confirmado el consentimiento correspondiente."
@@ -355,7 +355,7 @@ function addAIMessage(role, text, risk = false) {
   const label = document.createElement("span");
   label.textContent =
     role === "assistant"
-      ? (risk ? "NORTIA Reflexión · Revisión humana recomendada" : "NORTIA Reflexión")
+      ? (risk ? "RAUDAL Reflexión · Revisión humana recomendada" : "RAUDAL Reflexión")
       : "Tú";
 
   const p = document.createElement("p");

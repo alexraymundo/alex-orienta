@@ -2603,3 +2603,206 @@ textarea{resize:vertical}
 .preview-profile-map.student-profile-map-10 .profile-node strong{font-size:.51rem}.preview-profile-map.student-profile-map-10 .profile-node span{font-size:.47rem}.preview-profile-map.student-profile-map-10 .profile-node small{font-size:.43rem}
 @media(max-width:900px){.student-profile-map.student-profile-map-10{grid-template-columns:1fr 1fr;grid-template-rows:auto}.student-profile-map-10 .profile-map-center{grid-column:1/-1;grid-row:auto;min-height:145px}.student-profile-map-10 .profile-node{grid-column:auto!important;grid-row:auto!important}}
 @media(max-width:620px){.student-profile-map.student-profile-map-10{grid-template-columns:1fr}.student-profile-map-10 .profile-map-center{grid-column:1}.student-profile-map-10 .profile-node{grid-column:1!important}}
+
+
+/* V8.6.8 — mobile first fix for admin/CIDEB navigation */
+@media (max-width:760px){
+  .admin-body{overflow:auto}
+  .admin-layout{display:block;height:auto;min-height:100dvh}
+  .sidebar.clean-workspace-sidebar{
+    display:flex;
+    flex-direction:column;
+    align-items:stretch;
+    gap:10px;
+    padding:10px 12px 12px;
+    border-right:0;
+    border-bottom:1px solid var(--line);
+    height:auto!important;
+    overflow:visible;
+    position:sticky;
+    top:0;
+    z-index:35;
+    background:rgba(8,17,31,.96);
+    backdrop-filter:blur(16px);
+  }
+  .admin-brand{display:none}
+  .sidebar-scroll-area{
+    display:grid!important;
+    gap:10px;
+    min-width:0;
+    overflow:visible!important;
+  }
+  .workspace-switcher{
+    display:flex;
+    gap:8px;
+    margin:0;
+    padding:4px;
+    overflow-x:auto;
+    overflow-y:hidden;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+  }
+  .workspace-switcher::-webkit-scrollbar,
+  .workspace-nav::-webkit-scrollbar{display:none}
+  .workspace-choice{
+    flex:0 0 auto;
+    min-width:150px;
+  }
+  .workspace-nav,
+  .sidebar-scroll-area .workspace-nav{
+    display:flex!important;
+    flex-wrap:nowrap;
+    gap:8px;
+    min-width:0;
+    overflow-x:auto;
+    overflow-y:hidden;
+    padding-bottom:2px;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+  }
+  .workspace-nav[hidden]{display:none!important}
+  .sidebar-section-label{display:none!important}
+  .nav-btn,
+  .sidebar-scroll-area .nav-btn{
+    flex:0 0 auto;
+    width:auto;
+    min-width:max-content;
+    white-space:nowrap;
+    margin:0;
+    padding:11px 14px;
+    font-size:.92rem;
+  }
+  .cideb-nav-btn{min-width:max-content}
+  .nav-btn.logout,
+  .clean-workspace-sidebar .nav-btn.logout{
+    width:100%;
+    margin:0;
+    padding:12px 14px;
+    text-align:center;
+    border:1px solid rgba(253,164,175,.18);
+    background:rgba(253,164,175,.04);
+    box-shadow:none;
+  }
+  .admin-main{
+    height:auto!important;
+    overflow:visible!important;
+    padding:18px 14px 90px;
+  }
+  .admin-header{
+    margin-bottom:18px;
+    gap:14px;
+  }
+  .admin-header h1,
+  #viewTitle{
+    font-size:clamp(2.1rem,10vw,3.2rem);
+    line-height:.94;
+  }
+  .workspace-description{font-size:.82rem;line-height:1.55}
+  .global-search-shell{width:100%}
+  .panel{padding:18px 16px;border-radius:20px}
+}
+
+@media (max-width:480px){
+  .sidebar.clean-workspace-sidebar{padding:8px 10px 10px}
+  .workspace-choice{min-width:138px}
+  .workspace-choice strong{font-size:.72rem}
+  .workspace-choice small{font-size:.54rem}
+  .nav-btn,
+  .sidebar-scroll-area .nav-btn{padding:10px 12px;font-size:.86rem;border-radius:12px}
+  .cideb-nav-btn{grid-template-columns:auto 1fr;gap:8px}
+  .admin-main{padding:16px 12px 86px}
+  .admin-header h1,
+  #viewTitle{font-size:clamp(1.9rem,11vw,2.7rem)}
+  .panel-head,
+  .teacher-home-head,
+  .role-section-head{flex-direction:column;align-items:flex-start}
+}
+
+
+/* ==========================================================
+   RAUDAL — Identidad visual agua/corriente
+   Cambio exclusivamente visual de marca. Se conservan IDs,
+   tablas, cookies y nombres técnicos internos.
+   ========================================================== */
+:root{
+  --bg:#06161C;
+  --bg-soft:#09212A;
+  --panel:#0B2630;
+  --panel-2:#10333E;
+  --card:#0C2A34;
+  --text:#F4FBFC;
+  --muted:#91ADB5;
+  --line:rgba(102,210,203,.16);
+  --accent:#5EEAD4;
+  --accent-2:#2DD4BF;
+  --accent-3:#38BDF8;
+  --shadow:0 28px 90px rgba(1,12,17,.42);
+}
+body{
+  background:
+    radial-gradient(circle at 8% -4%,rgba(94,234,212,.11),transparent 27%),
+    radial-gradient(circle at 88% 2%,rgba(56,189,248,.08),transparent 24%),
+    linear-gradient(180deg,#06161C 0%,#071820 52%,#06141B 100%);
+}
+.brand-mark{
+  background:linear-gradient(145deg,#7CF4E4 0%,#2DD4BF 45%,#38BDF8 100%)!important;
+  color:#041418!important;
+  box-shadow:0 10px 30px rgba(45,212,191,.25)!important;
+}
+.brand small{color:#8DB8BD}
+.eyebrow{color:#67E8D5}
+.primary-btn{
+  background:linear-gradient(135deg,#67E8D5 0%,#2DD4BF 48%,#38BDF8 100%);
+  box-shadow:0 10px 30px rgba(45,212,191,.18);
+}
+.ghost-btn,.secondary-btn{border-color:rgba(94,234,212,.24);color:#70E7D7}
+.nav-btn.active,.workspace-choice.active{
+  background:linear-gradient(135deg,rgba(45,212,191,.14),rgba(56,189,248,.10));
+}
+.workspace-choice.school.active .workspace-choice-mark,
+.cideb-nav-mark{
+  background:linear-gradient(145deg,#67E8D5,#2DD4BF 52%,#38BDF8)!important;
+  color:#041418!important;
+}
+.admin-cideb-workspace .admin-main{
+  background:
+    radial-gradient(circle at 90% 2%,rgba(45,212,191,.06),transparent 25%),
+    radial-gradient(circle at 12% 92%,rgba(56,189,248,.035),transparent 25%),
+    var(--bg);
+}
+.admin-cideb-workspace .sidebar{border-right-color:rgba(94,234,212,.14)}
+.snapshot-card,.teacher-scope-note,.ai-context-label,.professional-publish-toggle{
+  border-color:rgba(94,234,212,.17);
+}
+.support-row i,.preview-bar i,.preview-context-row i{
+  background:linear-gradient(90deg,#5EEAD4,#2DD4BF 48%,#38BDF8);
+}
+.radar-area{stroke:#5EEAD4!important;filter:drop-shadow(0 0 18px rgba(94,234,212,.17))}
+.radar-shell{
+  border-color:rgba(94,234,212,.10)!important;
+  background:
+    radial-gradient(circle at 50% 45%,rgba(45,212,191,.08),rgba(6,22,28,.88) 62%)!important;
+}
+.radar-insights span,.preview-summary-feature>span,.preview-text-grid span,
+.teacher-action-grid article span,.continuity-grid article span{color:#67E8D5}
+.profile-map-center{
+  border-color:rgba(94,234,212,.24)!important;
+  background:radial-gradient(circle at 35% 30%,rgba(45,212,191,.18),rgba(6,22,28,.97) 68%)!important;
+}
+.profile-map-center span{color:#67E8D5!important}
+.cideb-nav-btn.active{
+  border-color:rgba(94,234,212,.30)!important;
+  background:linear-gradient(135deg,rgba(45,212,191,.14),rgba(56,189,248,.08))!important;
+}
+.report-safety-pill,.context-badge{
+  border-color:rgba(94,234,212,.25)!important;
+  background:linear-gradient(135deg,rgba(45,212,191,.08),rgba(56,189,248,.06))!important;
+}
+.role-topbar,.sidebar.clean-workspace-sidebar{
+  background:rgba(6,22,28,.95)!important;
+}
+@media(max-width:760px){
+  .sidebar.clean-workspace-sidebar{
+    background:linear-gradient(180deg,rgba(6,22,28,.98),rgba(7,25,32,.97))!important;
+  }
+}

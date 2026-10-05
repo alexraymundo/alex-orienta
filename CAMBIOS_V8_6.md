@@ -1,7 +1,7 @@
-# NORTIA v8.6 — Flujo centrado en Alex
+# RAUDAL v8.6 — Flujo centrado en Alex
 
 ## Cambio principal
-NORTIA deja de depender de que el docente capture observaciones estructuradas. Alex concentra la información escolar y controla qué evidencia se integra al expediente y al informe visual.
+RAUDAL deja de depender de que el docente capture observaciones estructuradas. Alex concentra la información escolar y controla qué evidencia se integra al expediente y al informe visual.
 
 ## Portal docente
 - El foco es consultar el informe de continuidad.
@@ -46,7 +46,7 @@ Aplicar `migration-v8.6.sql` en D1 antes o junto con el despliegue. El Worker ta
 ## Ajuste v8.6.2 (03-oct-2026)
 - “Estrategias que han funcionado” cambia a “Estrategias de apoyo recomendadas”.
 - La IA no debe afirmar que una estrategia funcionó salvo que exista evidencia expresa.
-- Si no existen áreas estructuradas marcadas, NORTIA identifica áreas cualitativas a partir del contenido del informe y las muestra como “Áreas identificadas en el registro”.
+- Si no existen áreas estructuradas marcadas, RAUDAL identifica áreas cualitativas a partir del contenido del informe y las muestra como “Áreas identificadas en el registro”.
 - Estas áreas cualitativas no generan porcentajes, scores ni tendencias; solo indican temas presentes en el contenido publicado.
 
 

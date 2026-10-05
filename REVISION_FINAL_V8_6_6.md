@@ -1,4 +1,4 @@
-# NORTIA V8.6.6 — Revisión final
+# RAUDAL V8.6.6 — Revisión final
 
 Revisión realizada antes de entrega:
 
