@@ -3466,3 +3466,30 @@ body{
   .constellation-hub{width:100px!important;height:100px!important}
 }
 @media(prefers-reduced-motion:reduce){.loading-shimmer,.loading-grid i{animation:none}}
+
+
+/* ==========================================================
+   RAUDAL V8.6.17 — Desktop constellation balance + professional actions
+   ========================================================== */
+@media (min-width:701px){
+  .profile-constellation:not(.preview-profile-constellation){min-height:620px}
+  .profile-constellation:not(.preview-profile-constellation) .constellation-node-1{left:50%;top:2%;transform:translateX(-50%)}
+  .profile-constellation:not(.preview-profile-constellation) .constellation-node-9{left:1%;top:16%}
+  .profile-constellation:not(.preview-profile-constellation) .constellation-node-2{right:1%;top:16%}
+  .profile-constellation:not(.preview-profile-constellation) .constellation-node-8{left:0;top:38%}
+  .profile-constellation:not(.preview-profile-constellation) .constellation-node-3{right:0;top:38%}
+  .profile-constellation:not(.preview-profile-constellation) .constellation-node-7{left:1%;top:59%}
+  .profile-constellation:not(.preview-profile-constellation) .constellation-node-4{right:1%;top:59%}
+  .profile-constellation:not(.preview-profile-constellation) .constellation-node-6{left:1%;bottom:2%;transform:none}
+  .profile-constellation:not(.preview-profile-constellation) .constellation-node-10{left:50%;bottom:2%;transform:translateX(-50%)}
+  .profile-constellation:not(.preview-profile-constellation) .constellation-node-5{right:1%;bottom:2%;transform:none}
+
+  .preview-profile-constellation{min-height:455px}
+  .preview-profile-constellation .constellation-node-6{left:1%;bottom:2%;transform:none;width:30%}
+  .preview-profile-constellation .constellation-node-10{left:35%;bottom:2%;transform:none;width:30%}
+  .preview-profile-constellation .constellation-node-5{right:1%;bottom:2%;transform:none;width:30%}
+  .preview-profile-constellation .constellation-node-7{left:1%;top:58%}
+  .preview-profile-constellation .constellation-node-4{right:1%;top:58%}
+}
+.professional-row-actions .secondary-btn:disabled,
+.professional-row-actions .text-action:disabled{opacity:.55;cursor:wait}

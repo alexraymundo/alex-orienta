@@ -2097,6 +2097,36 @@ document.addEventListener('click', async event => {
   if(action==='open-teacher-transfer') return openTeacherTransfer(id,button.dataset.name||'');
   if(action==='toggle-coordinator'){await api('/api/admin/coordinators/access',{method:'POST',body:JSON.stringify({coordinator_id:id,active:button.dataset.active!=="1"})});return loadCoordinators();}
   if(action==='regen-coordinator'){if(!confirm('El código anterior dejará de funcionar y coordinación deberá aceptar nuevamente el acuerdo. ¿Continuar?'))return;const d=await api('/api/admin/coordinators/regenerate',{method:'POST',body:JSON.stringify({coordinator_id:id})});adminToast(`Nuevo código de coordinación: ${d.access_code}`,'info');return loadCoordinators();}
+  if(action==='toggle-professional-observation'){
+    const makeVisible=button.dataset.visible!=="1";
+    const original=button.textContent;
+    button.disabled=true;
+    button.textContent=makeVisible?'PUBLICANDO…':'OCULTANDO…';
+    try{
+      await api('/api/admin/professional-school-observations/visibility',{method:'POST',body:JSON.stringify({id,visible:makeVisible})});
+      adminToast(makeVisible?'Observación publicada para docentes.':'Observación retirada de la vista docente.','success');
+      await loadProfessionalObservations();
+    }catch(err){
+      adminToast(err.message||'No fue posible actualizar la visibilidad.','error');
+      button.disabled=false;
+      button.textContent=original;
+    }
+    return;
+  }
+  if(action==='delete-professional-observation'){
+    if(!confirm('¿Eliminar esta observación profesional? Esta acción no se puede deshacer.'))return;
+    const original=button.textContent;
+    button.disabled=true;button.textContent='ELIMINANDO…';
+    try{
+      await api('/api/admin/professional-school-observations/delete',{method:'POST',body:JSON.stringify({id})});
+      adminToast('Observación profesional eliminada.','success');
+      await loadProfessionalObservations();
+    }catch(err){
+      adminToast(err.message||'No fue posible eliminar la observación.','error');
+      button.disabled=false;button.textContent=original;
+    }
+    return;
+  }
   if(action==='unassign-teacher'){if(!currentManagedTeacherId)return;await api('/api/admin/teachers/unassign',{method:'POST',body:JSON.stringify({teacher_id:currentManagedTeacherId,person_id:button.dataset.personId,school_year:button.dataset.year})});return Promise.all([manageTeacher(currentManagedTeacherId),loadTeachers()]);}
   if(action==='toggle-family'){await api('/api/admin/family/access/update',{method:'POST',body:JSON.stringify({guardian_id:id,active:button.dataset.active!=="1"})});return loadFamilyData();}
   if(action==='regen-family'){if(!confirm('El código anterior dejará de funcionar y deberá aceptar nuevamente el aviso. ¿Continuar?'))return;const d=await api('/api/admin/family/access/regenerate',{method:'POST',body:JSON.stringify({guardian_id:id})});$("#familyManageResult").hidden=false;$("#familyManageResult").innerHTML=`<span>NUEVO CÓDIGO FAMILIAR</span><strong>${escapeHTML(d.access_code)}</strong><small>El código anterior quedó invalidado.</small>`;return loadFamilyData();}

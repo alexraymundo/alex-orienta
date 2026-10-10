@@ -78,3 +78,8 @@ Aplicar `migration-v8.6.sql` en D1 antes o junto con el despliegue. El Worker ta
 - Radar refinado con etiquetas cortas, estados visuales e interpretación explícita.
 - Se aclara que ejes grises significan falta de evidencia y no deben interpretarse como dificultad.
 - Validación final de sintaxis JS, IDs HTML y estructura CSS.
+
+
+## V8.6.17
+- Se conectaron las acciones Publicar/Ocultar/Eliminar en observaciones profesionales.
+- Se corrigió la distribución de los nodos inferiores del mapa constelación en escritorio y vista previa.
