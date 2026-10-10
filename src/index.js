@@ -856,6 +856,7 @@ async function ensureSchoolModuleTables(env) {
   ];
   for (const sql of statements) await env.DB.prepare(sql).run();
   // Notas internas separadas de cualquier respuesta visible para docentes o familias.
+  await ensureColumn(env, "teachers", "archived_at", "TEXT");
   await ensureColumn(env, "teacher_observations", "private_note", "TEXT");
   await ensureColumn(env, "teacher_observations", "included_in_record", "INTEGER NOT NULL DEFAULT 0");
   await ensureColumn(env, "family_observations", "private_note", "TEXT");
@@ -2237,7 +2238,7 @@ Nunca tienes acceso a las notas privadas de Alex.
   }
 
   if (path === "/api/admin/teachers" && req.method === "GET") {
-    await ensureSchoolModuleTables(env); const {results}=await env.DB.prepare(`SELECT t.id,t.full_name,t.email,t.school_name,t.active,t.agreement_accepted_at,t.last_login_at,COUNT(CASE WHEN ta.active=1 THEN 1 END) AS student_count FROM teachers t LEFT JOIN teacher_assignments ta ON ta.teacher_id=t.id GROUP BY t.id ORDER BY t.full_name`).all();
+    await ensureSchoolModuleTables(env); const {results}=await env.DB.prepare(`SELECT t.id,t.full_name,t.email,t.school_name,t.active,t.agreement_accepted_at,t.last_login_at,COUNT(CASE WHEN ta.active=1 THEN 1 END) AS student_count FROM teachers t LEFT JOIN teacher_assignments ta ON ta.teacher_id=t.id WHERE t.archived_at IS NULL GROUP BY t.id ORDER BY t.full_name`).all();
     return json({teachers:results||[]});
   }
 
@@ -2258,7 +2259,7 @@ Nunca tienes acceso a las notas privadas de Alex.
   if (path === "/api/admin/teachers/detail" && req.method === "GET") {
     await ensureSchoolModuleTables(env);
     const teacherId=safeText(url.searchParams.get('teacher_id'),120);
-    const teacher=await env.DB.prepare(`SELECT id,full_name,email,school_name,active,access_hint,agreement_version,agreement_accepted_at,last_login_at FROM teachers WHERE id=?`).bind(teacherId).first();
+    const teacher=await env.DB.prepare(`SELECT id,full_name,email,school_name,active,access_hint,agreement_version,agreement_accepted_at,last_login_at,archived_at FROM teachers WHERE id=? AND archived_at IS NULL`).bind(teacherId).first();
     if(!teacher)return json({error:'Docente no encontrado.'},404);
     const {results}=await env.DB.prepare(`SELECT ta.person_id,ta.school_year,ta.active,p.full_name FROM teacher_assignments ta JOIN people p ON p.id=ta.person_id WHERE ta.teacher_id=? AND ta.active=1 ORDER BY p.full_name`).bind(teacherId).all();
     return json({teacher,assignments:results||[]});
@@ -2279,6 +2280,21 @@ Nunca tienes acceso a las notas privadas de Alex.
     await env.DB.prepare(`UPDATE teachers SET access_hash=?,access_hint=?,active=1,agreement_accepted_at=NULL,agreement_signed_name=NULL,agreement_version=?,updated_at=? WHERE id=?`).bind(hash,code.slice(-4),TEACHER_AGREEMENT_VERSION,now,teacherId).run();
     await logAudit(env,'admin','alex','regenerate_teacher_access',null,`Docente ${teacherId}`);
     return json({ok:true,access_code:code});
+  }
+
+  if (path === "/api/admin/teachers/delete" && req.method === "POST") {
+    await ensureSchoolModuleTables(env);
+    const b=await parseBody(req),teacherId=safeText(b.teacher_id,120),confirmation=safeText(b.confirmation,40).toUpperCase();
+    if(!teacherId)return json({error:'Docente obligatorio.'},400);
+    if(confirmation!=='ELIMINAR')return json({error:'Confirmación inválida. Escribe ELIMINAR.'},400);
+    const teacher=await env.DB.prepare(`SELECT id,full_name,archived_at FROM teachers WHERE id=?`).bind(teacherId).first();
+    if(!teacher||teacher.archived_at)return json({error:'Docente no encontrado.'},404);
+    const assigned=await env.DB.prepare(`SELECT COUNT(*) AS count FROM teacher_assignments WHERE teacher_id=? AND active=1`).bind(teacherId).first();
+    if(Number(assigned?.count||0)>0)return json({error:`Este docente todavía tiene ${Number(assigned.count)} alumno(s) asignado(s). Transfiérelos o quítalos antes de eliminarlo.`},409);
+    const now=nowISO();
+    await env.DB.prepare(`UPDATE teachers SET active=0,archived_at=?,updated_at=? WHERE id=?`).bind(now,now,teacherId).run();
+    await logAudit(env,'admin','alex','delete_teacher_access',null,`Docente: ${teacher.full_name} · ${teacherId}`);
+    return json({ok:true,message:`${teacher.full_name} fue eliminado de la lista de docentes. Su historial se conservó.`});
   }
 
   if (path === "/api/admin/teachers/unassign" && req.method === "POST") {

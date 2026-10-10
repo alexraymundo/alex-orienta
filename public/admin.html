@@ -448,6 +448,13 @@
         <hr class="soft-rule">
         <div class="admin-form-grid"><label>Buscar alumno sin maestro<input id="teacherAssignSearch" placeholder="Nombre o matrícula…" autocomplete="off"></label><label>Alumno<select id="teacherAssignStudent"><option value="">Escribe para buscar</option></select></label><button class="secondary-btn" id="assignTeacherStudentBtn">ASIGNAR COMO MAESTRO ACTUAL</button></div><p class="form-help">Si el alumno ya tiene maestro actual, haz el cambio desde la ficha del alumno con <b>Transferir docente</b>.</p>
         <div class="data-action-row"><button class="secondary-btn" id="toggleTeacherAccessBtn">DESACTIVAR ACCESO</button><button class="secondary-btn" id="regenTeacherCodeBtn">REGENERAR CÓDIGO</button></div>
+        <div class="danger-zone" id="teacherDeleteZone">
+          <span class="eyebrow">ZONA DE ELIMINACIÓN</span>
+          <strong>Eliminar docente</strong>
+          <p id="teacherDeleteHelp">Solo puedes eliminar un docente cuando ya no tenga alumnos asignados. El historial escolar y las observaciones previas se conservan.</p>
+          <label>Escribe <b>ELIMINAR</b> para confirmar<input id="teacherDeleteConfirmation" autocomplete="off" placeholder="ELIMINAR"></label>
+          <button class="danger-btn" id="deleteTeacherBtn" type="button">ELIMINAR DOCENTE</button>
+        </div>
         <div id="teacherManageCode" class="access-code-result" hidden></div><div id="teacherManageStatus" class="status"></div>
       </div>
       <div class="panel clean-form-panel" id="teacherCreatePanel" hidden>

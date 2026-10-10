@@ -1555,12 +1555,44 @@ async function manageTeacher(id){
   $("#teacherAssignmentsList").innerHTML=activeAssignments.length?activeAssignments.map(a=>`<article class="admin-record"><div><strong>${escapeHTML(a.full_name)}</strong><span>${escapeHTML(a.school_year||"Sin ciclo")}</span></div><button class="text-action danger-text" data-action="unassign-teacher" data-person-id="${escapeHTML(a.person_id)}" data-year="${escapeHTML(a.school_year||"")}">Quitar</button></article>`).join(""):`<p class="muted">Sin alumnos asignados actualmente.</p>`;
   $("#toggleTeacherAccessBtn").textContent=d.teacher.active?"DESACTIVAR ACCESO":"ACTIVAR ACCESO";
   $("#toggleTeacherAccessBtn").dataset.active=d.teacher.active?"1":"0";
+  const deleteBtn=$("#deleteTeacherBtn"),deleteHelp=$("#teacherDeleteHelp"),deleteConfirm=$("#teacherDeleteConfirmation");
+  if(deleteConfirm) deleteConfirm.value="";
+  if(deleteBtn){
+    deleteBtn.disabled=activeAssignments.length>0;
+    deleteBtn.dataset.teacherName=d.teacher.full_name||"Docente";
+  }
+  if(deleteHelp) deleteHelp.textContent=activeAssignments.length
+    ? `Este docente todavía tiene ${activeAssignments.length} alumno(s) asignado(s). Transfiérelos o quítalos antes de eliminar el acceso.`
+    : "Puedes eliminar este docente. Su acceso desaparecerá, pero el historial escolar y las observaciones previas se conservarán.";
   await loadSchoolOptions("#teacherAssignStudent");
 }
 $("#closeTeacherManageBtn")?.addEventListener("click",()=>{$("#teacherManagePanel").hidden=true;currentManagedTeacherId="";});
 $("#assignTeacherStudentBtn")?.addEventListener("click",async()=>{if(!currentManagedTeacherId||!$("#teacherAssignStudent").value)return;try{await api("/api/admin/teachers/assign",{method:"POST",body:JSON.stringify({teacher_id:currentManagedTeacherId,person_id:$("#teacherAssignStudent").value})});$("#teacherManageStatus").style.color="#86EFAC";$("#teacherManageStatus").textContent="Asignado como maestro actual.";await Promise.all([manageTeacher(currentManagedTeacherId),loadTeachers(),loadCidebStudents(cidebDirectoryPage)]);}catch(e){$("#teacherManageStatus").style.color="#FDA4AF";$("#teacherManageStatus").textContent=e.message;}});
 $("#toggleTeacherAccessBtn")?.addEventListener("click",async()=>{if(!currentManagedTeacherId)return;const active=$("#toggleTeacherAccessBtn").dataset.active!=="1";await api("/api/admin/teachers/access",{method:"POST",body:JSON.stringify({teacher_id:currentManagedTeacherId,active})});await Promise.all([manageTeacher(currentManagedTeacherId),loadTeachers()]);});
 $("#regenTeacherCodeBtn")?.addEventListener("click",async()=>{if(!currentManagedTeacherId||!confirm("El código anterior dejará de funcionar y el docente deberá aceptar nuevamente el acuerdo. ¿Continuar?"))return;const d=await api("/api/admin/teachers/regenerate",{method:"POST",body:JSON.stringify({teacher_id:currentManagedTeacherId})});$("#teacherManageCode").hidden=false;$("#teacherManageCode").innerHTML=`<span>NUEVO CÓDIGO DOCENTE</span><strong>${escapeHTML(d.access_code)}</strong><small>El código anterior quedó invalidado.</small>`;await Promise.all([manageTeacher(currentManagedTeacherId),loadTeachers()]);});
+$("#deleteTeacherBtn")?.addEventListener("click",async()=>{
+  if(!currentManagedTeacherId)return;
+  const confirmation=$("#teacherDeleteConfirmation")?.value.trim().toUpperCase();
+  const name=$("#deleteTeacherBtn")?.dataset.teacherName||"este docente";
+  if(confirmation!=="ELIMINAR"){
+    $("#teacherManageStatus").style.color="#FDA4AF";
+    $("#teacherManageStatus").textContent='Escribe exactamente ELIMINAR para confirmar.';
+    return;
+  }
+  if(!confirm(`¿Eliminar a ${name}? Su acceso se desactivará y desaparecerá de la lista. El historial escolar se conservará.`))return;
+  const btn=$("#deleteTeacherBtn");btn.disabled=true;
+  try{
+    const d=await api("/api/admin/teachers/delete",{method:"POST",body:JSON.stringify({teacher_id:currentManagedTeacherId,confirmation:"ELIMINAR"})});
+    $("#teacherManagePanel").hidden=true;
+    currentManagedTeacherId="";
+    await Promise.all([loadTeachers(),loadCidebStudents(cidebDirectoryPage),loadAudit()]);
+    adminToast(d.message||"Docente eliminado.","success");
+  }catch(e){
+    btn.disabled=false;
+    $("#teacherManageStatus").style.color="#FDA4AF";
+    $("#teacherManageStatus").textContent=e.message;
+  }
+});
 $("#createTeacherBtn").addEventListener("click",async()=>{try{const d=await api("/api/admin/teachers/create",{method:"POST",body:JSON.stringify({full_name:$("#teacherName").value,email:$("#teacherEmail").value,school_name:$("#teacherSchool").value})});$("#teacherCreateResult").hidden=false;$("#teacherCreateResult").innerHTML=`<span>CÓDIGO DOCENTE</span><strong>${escapeHTML(d.access_code)}</strong><small>Entrar en /docente.html. Después asigna alumnos desde su ficha o desde gestionar docente si aún no tienen maestro.</small>`;$("#teacherAdminStatus").style.color="#86EFAC";$("#teacherAdminStatus").textContent="Acceso docente creado.";await loadTeachers();}catch(e){$("#teacherAdminStatus").style.color="#FDA4AF";$("#teacherAdminStatus").textContent=e.message;}});
 
 

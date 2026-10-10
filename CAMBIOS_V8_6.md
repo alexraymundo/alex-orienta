@@ -83,3 +83,10 @@ Aplicar `migration-v8.6.sql` en D1 antes o junto con el despliegue. El Worker ta
 ## V8.6.17
 - Se conectaron las acciones Publicar/Ocultar/Eliminar en observaciones profesionales.
 - Se corrigió la distribución de los nodos inferiores del mapa constelación en escritorio y vista previa.
+
+
+## V8.6.18 — Eliminar docente
+- Se agregó botón ELIMINAR DOCENTE dentro de Gestionar docente.
+- Solo se permite si el docente no tiene alumnos activos asignados.
+- La eliminación es segura: desactiva y archiva el acceso sin borrar observaciones ni historial escolar.
+- Se requiere escribir ELIMINAR y confirmar la acción.
